@@ -1,212 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Sophia — Level 1</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<style>
-body{
-margin:0;
-overflow:hidden;
-background:#1c1a1a;
-font-family:sans-serif;
-}
-
-/* CANVAS */
-canvas{
-display:block;
-margin:auto;
-background:#3e2c1c;
-}
-
-/* JOYSTICK */
-#pad{
-position:fixed;
-bottom:40px;
-left:50%;
-transform:translateX(-50%);
-width:150px;
-height:150px;
-border-radius:50%;
-background:rgba(255,255,255,.05);
-border:2px solid rgba(255,255,255,.15);
-backdrop-filter:blur(8px);
-}
-
-.btn{
-position:absolute;
-width:40px;
-height:40px;
-border-radius:50%;
-background:#8a2eff;
-opacity:.85;
-}
-
-.up{top:10px;left:50%;transform:translateX(-50%);}
-.down{bottom:10px;left:50%;transform:translateX(-50%);}
-.left{left:10px;top:50%;transform:translateY(-50%);}
-.right{right:10px;top:50%;transform:translateY(-50%);}
-
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>The Adventures of Sophia</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="wrap">
+    <canvas id="game" width="960" height="540"></canvas>
 
-<canvas id="game" width="900" height="500"></canvas>
+    <!-- MOBILE CONTROLS -->
+    <div id="hud">
+      <div id="dpad">
+        <button data-dir="up">▲</button>
+        <div class="row">
+          <button data-dir="left">◀</button>
+          <button data-dir="down">▼</button>
+          <button data-dir="right">▶</button>
+        </div>
+      </div>
 
-<div id="pad">
-<div class="btn up"></div>
-<div class="btn down"></div>
-<div class="btn left"></div>
-<div class="btn right"></div>
-</div>
+      <button id="btnInteract">INTERACT</button>
+    </div>
 
-<script>
+    <div id="toast"></div>
+  </div>
 
-const canvas = document.getElementById("game")
-const ctx = canvas.getContext("2d")
+  <!-- DATA -->
+  <script src="js/data/outfits.js"></script>
+  <script src="js/data/maps.js"></script>
 
-/* PLAYER */
-let player = {
-x:420,
-y:260,
-speed:2.4,
-vx:0,
-vy:0
-}
+  <!-- CORE -->
+  <script src="js/input.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/audio.js"></script>
 
-/* CONTROLS */
-const keys = {}
+  <!-- SCENES -->
+  <script src="js/scenes/scene_wardrobe.js"></script>
+  <script src="js/scenes/scene_room.js"></script>
 
-/* KEYBOARD */
-document.addEventListener("keydown",e=>keys[e.key]=true)
-document.addEventListener("keyup",e=>keys[e.key]=false)
-
-/* TOUCH CONTROLS */
-document.querySelector(".up").ontouchstart=()=>player.vy=-player.speed
-document.querySelector(".down").ontouchstart=()=>player.vy=player.speed
-document.querySelector(".left").ontouchstart=()=>player.vx=-player.speed
-document.querySelector(".right").ontouchstart=()=>player.vx=player.speed
-
-document.querySelectorAll(".btn").forEach(b=>{
-b.ontouchend=()=>{player.vx=0;player.vy=0}
-})
-
-/* DRAW ROOM */
-function drawRoom(){
-
-// floor
-ctx.fillStyle="#6e4a2b"
-ctx.fillRect(0,350,900,150)
-
-// wall
-ctx.fillStyle="#a97b50"
-ctx.fillRect(0,0,900,350)
-
-// bookshelf
-for(let i=0;i<6;i++){
-ctx.fillStyle="#4a2d17"
-ctx.fillRect(60+i*140,70,100,220)
-
-ctx.fillStyle="#2a160a"
-ctx.fillRect(60+i*140,150,100,10)
-
-ctx.fillStyle="#2a160a"
-ctx.fillRect(60+i*140,230,100,10)
-}
-
-// books
-for(let i=0;i<50;i++){
-ctx.fillStyle=`hsl(${Math.random()*360},60%,60%)`
-ctx.fillRect(70+Math.random()*760,80+Math.random()*180,10,30)
-}
-
-// desk
-ctx.fillStyle="#5a381e"
-ctx.fillRect(350,300,200,60)
-
-// clock
-ctx.fillStyle="#fff"
-ctx.beginPath()
-ctx.arc(450,80,35,0,Math.PI*2)
-ctx.fill()
-
-ctx.strokeStyle="#000"
-ctx.beginPath()
-ctx.moveTo(450,80)
-ctx.lineTo(450,60)
-ctx.stroke()
-
-}
-
-/* DRAW SOPHIA */
-function drawSophia(){
-
-let bob = Math.sin(Date.now()/150)*2
-
-// dress
-ctx.fillStyle="#ffb6d9"
-ctx.beginPath()
-ctx.ellipse(player.x,player.y+18+bob,22,26,0,0,Math.PI*2)
-ctx.fill()
-
-// head
-ctx.fillStyle="#ffe0c4"
-ctx.beginPath()
-ctx.arc(player.x,player.y-12+bob,16,0,Math.PI*2)
-ctx.fill()
-
-// hair
-ctx.fillStyle="#f5d26b"
-ctx.beginPath()
-ctx.arc(player.x,player.y-16+bob,18,Math.PI,0)
-ctx.fill()
-
-// eyes
-ctx.fillStyle="#4aa3ff"
-ctx.beginPath()
-ctx.arc(player.x-6,player.y-12+bob,3,0,Math.PI*2)
-ctx.arc(player.x+6,player.y-12+bob,3,0,Math.PI*2)
-ctx.fill()
-
-// feet
-ctx.fillStyle="#333"
-ctx.fillRect(player.x-10,player.y+40+bob,8,6)
-ctx.fillRect(player.x+2,player.y+40+bob,8,6)
-
-}
-
-/* MOVEMENT */
-function update(){
-
-player.vx=0
-player.vy=0
-
-if(keys["ArrowUp"]) player.vy=-player.speed
-if(keys["ArrowDown"]) player.vy=player.speed
-if(keys["ArrowLeft"]) player.vx=-player.speed
-if(keys["ArrowRight"]) player.vx=player.speed
-
-player.x+=player.vx
-player.y+=player.vy
-
-// boundaries
-player.x=Math.max(20,Math.min(880,player.x))
-player.y=Math.max(60,Math.min(330,player.y))
-
-}
-
-/* LOOP */
-function game(){
-ctx.clearRect(0,0,900,500)
-drawRoom()
-drawSophia()
-update()
-requestAnimationFrame(game)
-}
-
-game()
-
-</script>
+  <!-- GAME -->
+  <script src="js/main.js"></script>
 </body>
 </html>
