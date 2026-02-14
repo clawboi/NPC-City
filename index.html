@@ -474,5 +474,52 @@
       setTimeout(()=> window.__tapRun = false, 160);
     });
   </script>
+  <script>
+  // On-screen error overlay (so you don't need console)
+  (function(){
+    const box = document.createElement('div');
+    box.style.cssText = `
+      position:fixed; left:12px; right:12px; bottom:12px; z-index:9999;
+      max-height:42vh; overflow:auto;
+      background:rgba(0,0,0,.78); border:1px solid rgba(255,255,255,.18);
+      border-radius:16px; padding:12px; color:#fff;
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      display:none;
+    `;
+    box.innerHTML = `<div style="letter-spacing:.12em;text-transform:uppercase;opacity:.9;margin-bottom:6px">Debug</div>`;
+    document.body.appendChild(box);
+
+    function show(msg){
+      box.style.display = 'block';
+      const line = document.createElement('div');
+      line.style.cssText = 'margin:6px 0; opacity:.95;';
+      line.textContent = msg;
+      box.appendChild(line);
+    }
+
+    // JS errors
+    window.addEventListener('error', function(e){
+      // Resource load error (like 404 script)
+      const t = e.target;
+      if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK' || t.tagName === 'IMG')) {
+        show(`RESOURCE FAILED: ${t.tagName} → ${t.src || t.href || '(unknown)'}`);
+      } else {
+        show(`JS ERROR: ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+      }
+    }, true);
+
+    // Promise errors
+    window.addEventListener('unhandledrejection', function(e){
+      show(`PROMISE ERROR: ${String(e.reason)}`);
+    });
+
+    // If still loading after 2 seconds, tell user to look here
+    setTimeout(()=> {
+      if (document.getElementById('loading') && getComputedStyle(document.getElementById('loading')).display !== 'none'){
+        show('STUCK LOADING: likely a missing file path or a JS crash before main.js finishes.');
+      }
+    }, 2000);
+  })();
+</script>
 </body>
 </html>
