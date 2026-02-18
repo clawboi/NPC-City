@@ -116,3 +116,74 @@ canvas{
   padding:6px 10px;
   border-radius:10px;
 }
+
+/* ===== Stamina bar ===== */
+.stam{
+  width: 120px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ui2);
+  background: rgba(255,255,255,.05);
+  overflow:hidden;
+}
+.stam-fill{
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(138,46,255,.95), rgba(255,255,255,.65));
+}
+
+/* ===== Interaction prompt ===== */
+.prompt{
+  position:fixed;
+  left:50%;
+  bottom:18px;
+  transform: translateX(-50%);
+  max-width: min(860px, calc(100vw - 24px));
+  padding:10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--ui2);
+  background: rgba(0,0,0,.38);
+  backdrop-filter: blur(10px);
+  color: rgba(255,255,255,.9);
+  font-size: 13px;
+  letter-spacing: .02em;
+  opacity: 0;
+  translate: 0 10px;
+  transition: opacity .15s ease, translate .15s ease;
+  pointer-events:none;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.prompt.show{
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* ===== Toast ===== */
+.toast{
+  position:fixed;
+  left:50%;
+  top:74px;
+  transform: translateX(-50%);
+  max-width: min(740px, calc(100vw - 24px));
+  padding:10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(138,46,255,.35);
+  background: rgba(10,10,16,.55);
+  backdrop-filter: blur(12px);
+  color: rgba(255,255,255,.92);
+  font-size: 13px;
+  letter-spacing: .02em;
+  opacity:0;
+  pointer-events:none;
+}
+.toast.show{
+  animation: toastPop 1.4s ease both;
+}
+@keyframes toastPop{
+  0%{opacity:0; transform: translateX(-50%) translateY(-6px) scale(.98)}
+  10%{opacity:1; transform: translateX(-50%) translateY(0) scale(1)}
+  85%{opacity:1; transform: translateX(-50%) translateY(0) scale(1)}
+  100%{opacity:0; transform: translateX(-50%) translateY(-6px) scale(.985)}
+}
