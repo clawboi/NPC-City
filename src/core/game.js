@@ -1,4 +1,3 @@
-
 export class Game {
   constructor({ canvas, ctx, input, save, ui, assets, world }){
     this.canvas = canvas;
@@ -34,6 +33,9 @@ export class Game {
 
       money: 40,
       area: "",
+
+      // tiny cache for visuals (safe even if saves don’t include it)
+      _punchFxLock: 0,
     };
 
     this.camera = {
@@ -80,6 +82,8 @@ export class Game {
     this.player.punchT = 0;
     this.player.punchCd = 0;
     this.player.iFrames = 0;
+    this.player._punchFxLock = 0;
+
     this.player.stamina = this.player.staminaMax;
 
     this.fx.length = 0;
@@ -92,6 +96,7 @@ export class Game {
   continueGame(){
     const data = this.save.load();
     if (!data) return this.newGameMenu();
+
     this.player = { ...this.player, ...data.player };
 
     // safety: ensure action fields exist for older saves
@@ -104,6 +109,7 @@ export class Game {
     this.player.punchCd ??= 0;
     this.player.iFrames ??= 0;
     this.player.staminaMax ??= 100;
+    this.player._punchFxLock ??= 0;
     this.player.stamina = clamp(this.player.stamina ?? this.player.staminaMax, 0, this.player.staminaMax);
 
     this.state = "play";
@@ -145,6 +151,7 @@ export class Game {
     this.player.dodgeCd = Math.max(0, this.player.dodgeCd - dt);
     this.player.punchCd = Math.max(0, this.player.punchCd - dt);
     this.player.iFrames = Math.max(0, this.player.iFrames - dt);
+    this.player._punchFxLock = Math.max(0, this.player._punchFxLock - dt);
 
     // stamina regen (slow while acting)
     const acting = (this.player.dodgeT > 0) || (this.player.punchT > 0) || (this.player.jumpT > 0);
@@ -186,7 +193,13 @@ export class Game {
       if (this.player.stamina >= cost){
         this.player.stamina -= cost;
         this.player.jumpT = 0.28;
-        this.fx.push({ type:"poof", x:this.player.x+this.player.w/2, y:this.player.y+this.player.h+6, t:0, dur:0.22 });
+        this.fx.push({
+          type:"poof",
+          x:this.player.x + this.player.w/2,
+          y:this.player.y + this.player.h + 6,
+          t:0,
+          dur:0.22
+        });
       }
     }
 
@@ -198,17 +211,40 @@ export class Game {
         this.player.dodgeT = 0.18;
         this.player.dodgeCd = 0.40;
         this.player.iFrames = 0.22;
-        this.fx.push({ type:"dash", x:this.player.x+this.player.w/2, y:this.player.y+this.player.h/2, t:0, dur:0.18, dx:this.player.faceX, dy:this.player.faceY });
+        this.fx.push({
+          type:"dash",
+          x:this.player.x + this.player.w/2,
+          y:this.player.y + this.player.h/2,
+          t:0,
+          dur:0.18,
+          dx:this.player.faceX,
+          dy:this.player.faceY
+        });
       }
     }
 
-    // Punch (short swing, for now just visual)
+    // Punch (now: also spawns a tiny punch swoosh FX)
     if (this.input.pressed("f") && this.player.punchCd <= 0 && this.player.punchT <= 0){
       const cost = 10;
       if (this.player.stamina >= cost){
         this.player.stamina -= cost;
         this.player.punchT = 0.12;
         this.player.punchCd = 0.18;
+
+        // spawn FX once per punch
+        if (this.player._punchFxLock <= 0){
+          this.player._punchFxLock = 0.10;
+          const fx = this.player.faceX || 0;
+          const fy = this.player.faceY || 1;
+          this.fx.push({
+            type:"punch",
+            t:0,
+            dur:0.14,
+            x: this.player.x + this.player.w/2 + fx*16,
+            y: this.player.y + this.player.h/2 + fy*16,
+            dx: fx, dy: fy
+          });
+        }
       }
     }
 
@@ -228,9 +264,9 @@ export class Game {
     }
 
     // ===== MOVEMENT =====
-    // if dodging, override movement with burst
     let dx = 0, dy = 0;
 
+    // if dodging, override movement with burst
     if (this.player.dodgeT > 0){
       this.player.dodgeT = Math.max(0, this.player.dodgeT - dt);
       const spd = 520;
@@ -268,19 +304,17 @@ export class Game {
     this.player.y = clamp(this.player.y, 0, this.world.h - this.player.h);
 
     // Camera follow (smooth, then pixel-snap to stop shimmer)
-const targetX = this.player.x + this.player.w * 0.5 - this.camera.vw * 0.5;
-const targetY = this.player.y + this.player.h * 0.5 - this.camera.vh * 0.5;
+    const targetX = this.player.x + this.player.w * 0.5 - this.camera.vw * 0.5;
+    const targetY = this.player.y + this.player.h * 0.5 - this.camera.vh * 0.5;
 
-const clampedX = clamp(targetX, 0, this.world.w - this.camera.vw);
-const clampedY = clamp(targetY, 0, this.world.h - this.camera.vh);
+    const clampedX = clamp(targetX, 0, this.world.w - this.camera.vw);
+    const clampedY = clamp(targetY, 0, this.world.h - this.camera.vh);
 
-// Smooth follow
-this.camera.x = lerp(this.camera.x, clampedX, 0.12);
-this.camera.y = lerp(this.camera.y, clampedY, 0.12);
+    this.camera.x = lerp(this.camera.x, clampedX, 0.12);
+    this.camera.y = lerp(this.camera.y, clampedY, 0.12);
 
-// Pixel-snap (kills the “static/shaky” look)
-this.camera.x = Math.round(this.camera.x);
-this.camera.y = Math.round(this.camera.y);
+    this.camera.x = Math.round(this.camera.x);
+    this.camera.y = Math.round(this.camera.y);
 
     // Determine area name (simple rule: based on regions)
     this.player.area = this.getAreaName(this.player.x, this.player.y, this.player.role);
@@ -295,9 +329,7 @@ this.camera.y = Math.round(this.camera.y);
     });
 
     // FX tick
-    for (const f of this.fx){
-      f.t += dt;
-    }
+    for (const f of this.fx) f.t += dt;
     this.fx = this.fx.filter(f => f.t < f.dur);
 
     // Autosave (light)
@@ -309,38 +341,25 @@ this.camera.y = Math.round(this.camera.y);
   }
 
   handleInteract(lm){
-    // Tiny “placeholder interactions” so the city feels alive immediately.
     switch (lm.id){
-      case "bodega":
-        this.ui.toast?.("Bodega: snacks + items coming soon");
-        break;
-      case "studio":
-        this.ui.toast?.("Studio Gate: auditions coming soon");
-        break;
-      case "police_hq":
-        this.ui.toast?.("Police HQ: jobs + heat system coming soon");
-        break;
-      case "bus_stop":
-        this.ui.toast?.("Bus Stop: fast travel coming soon");
-        break;
-      default:
-        this.ui.toast?.(lm.text);
+      case "bodega":   this.ui.toast?.("Bodega: snacks + items coming soon"); break;
+      case "studio":   this.ui.toast?.("Studio Gate: auditions coming soon"); break;
+      case "police_hq":this.ui.toast?.("Police HQ: jobs + heat system coming soon"); break;
+      case "bus_stop": this.ui.toast?.("Bus Stop: fast travel coming soon"); break;
+      default:         this.ui.toast?.(lm.text); break;
     }
   }
 
   moveWithCollision(dx, dy){
     if (!dx && !dy) return;
-    const next = {
-      x: this.player.x + dx,
-      y: this.player.y + dy,
-      w: this.player.w,
-      h: this.player.h
-    };
+
+    const next = { x: this.player.x + dx, y: this.player.y + dy, w: this.player.w, h: this.player.h };
     if (!this.world.hitsSolid(next)){
       this.player.x = next.x;
       this.player.y = next.y;
       return;
     }
+
     // If collision, try smaller step to avoid “sticky” feel
     const steps = 6;
     for (let i=1; i<=steps; i++){
@@ -385,6 +404,7 @@ this.camera.y = Math.round(this.camera.y);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
+
       if (f.type === "dash"){
         const p = f.t / f.dur;
         ctx.globalAlpha = (1 - p) * 0.25;
@@ -394,6 +414,29 @@ this.camera.y = Math.round(this.camera.y);
         ctx.moveTo(f.x - f.dx*28*p, f.y - f.dy*28*p);
         ctx.lineTo(f.x - f.dx*28*(p+0.25), f.y - f.dy*28*(p+0.25));
         ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // NEW: punch swoosh
+      if (f.type === "punch"){
+        const p = f.t / f.dur;
+        ctx.globalAlpha = (1 - p) * 0.55;
+        ctx.strokeStyle = "rgba(255,255,255,.9)";
+        ctx.lineWidth = 2;
+
+        const len = 14 + p*10;
+        const ox = f.dx * len;
+        const oy = f.dy * len;
+
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, 6 + p*8, 0.2*Math.PI, 1.2*Math.PI);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(f.x - ox*0.15, f.y - oy*0.15);
+        ctx.lineTo(f.x + ox*0.25, f.y + oy*0.25);
+        ctx.stroke();
+
         ctx.globalAlpha = 1;
       }
     }
@@ -412,203 +455,49 @@ this.camera.y = Math.round(this.camera.y);
     ctx.fill();
 
     const liftY = -this.player.z;
+
+    // Player
     drawPlayerGhibliZelda(ctx, this.player);
 
-    // Punch ring (visual)
+    // Punch ring (kept, but now it matches actual punch feel)
     if (this.player.punchT > 0){
       const fx = this.player.faceX || 0;
       const fy = this.player.faceY || 1;
       const cx = this.player.x + this.player.w/2 + fx*16;
       const cy = this.player.y + this.player.h/2 + fy*16 + liftY;
-      ctx.globalAlpha = 0.9;
+
+      ctx.globalAlpha = 0.35;
       ctx.strokeStyle = "rgba(255,255,255,.85)";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(cx, cy, 10, 0, Math.PI*2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
-    // ... draw player ...
+    // Above-layer props (tree canopies, etc.)
+    this.world.drawAbove?.(ctx, this.camera);
 
-// NEW: draw above-layer props (tree canopies, etc.)
-this.world.drawAbove?.(ctx, this.camera);
-
-ctx.restore();
-
+    ctx.restore();
   }
 }
 
-// ===== PLAYER SPRITE: Studio Ghibli x Zelda (no images) =====
-// Design notes (why it feels right):
-// - Big readable head + eyes (Ghibli warmth) but compact silhouette (Zelda clarity)
-// - Tunic + belt + satchel strap = "adventure" without needing gear systems yet
-// - Soft outline (not harsh black) so it blends with your dreamy UI
-// - Tiny idle-breath bob so the character feels alive even when standing
+// ===== PLAYER SPRITE: Cute blonde girl, blue eyes, subtle motions (no images) =====
+// Notes:
+// - Built for “safe” subtle motion: max 1px limb shifts.
+// - Uses punchT to add a tiny jab so punching feels real.
+// - Blink is quick and friendly (not uncanny).
 
 function drawPlayerGhibliZelda(ctx, p){
-  // Base sprite size in "pixel units"
-  const px = 2; // pixel scale (2 = crisp but detailed on 960x540)
-  const W = 16 * px;
-  const H = 22 * px;
+  const px = 2;           // change to 3 if you want her bigger instantly
+  const W  = 18 * px;
+  const H  = 22 * px;
 
-  // Anchor: center on collider, feet at bottom
   const cx = p.x + p.w/2;
   const feetY = p.y + p.h + 2;
   const sx = Math.round(cx - W/2);
   const sy = Math.round(feetY - H - (p.z || 0));
 
-  // Gentle idle bob (breathing)
-  const t = performance.now() * 0.002;
-  const bob = (p.jumpT > 0 || p.dodgeT > 0 || p.punchT > 0) ? 0 : Math.round(Math.sin(t) * 1);
-  const y = sy + bob;
-
-  // Palette (warm, painterly, "Ghibli-ish" but still game readable)
-  const outline = "rgba(10,10,18,.55)";
-  const skin    = "#f1c7a6";
-  const blush   = "rgba(255,120,160,.28)";
-  const hair    = "#2a1b14";
-  const tunic   = "#2faa53";     // classic heroic green
-  const tunic2  = "#1f7f42";     // shadow green
-  const belt    = "#6b4b2a";
-  const metal   = "#c9c0ae";
-  const boots   = "#2a1f18";
-  const strap   = "#4a3424";
-  const bag     = "#7a5a3a";
-  const eye     = "#1a1a1a";
-  const eye2    = "rgba(255,255,255,.85)";
-
-  // Shadow on ground (already in your code too, but this helps sprite feel anchored)
-  ctx.save();
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.ellipse(cx, feetY + 2, 12, 6, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-
-  // Helper: chunky pixel rect with optional outline
-  function box(x, y, w, h, fill){
-    ctx.fillStyle = fill;
-    ctx.fillRect(x, y, w, h);
-  }
-  function oBox(x, y, w, h, fill){
-    ctx.fillStyle = fill;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-  }
-
-  // ========= SILHOUETTE LAYERS =========
-
-  // Cape-ish back cloth (subtle, not full cape)
-  ctx.save();
-  ctx.globalAlpha = 0.65;
-  box(sx + 3*px, y + 9*px, 10*px, 10*px, "rgba(20,40,30,.45)");
-  ctx.restore();
-
-  // ---- HEAD (big + soft) ----
-  // Head base (stepped edges)
-  box(sx + 4*px, y + 1*px, 8*px, 7*px, skin);
-  box(sx + 5*px, y + 0*px, 6*px, 1*px, skin); // top rounding hint
-
-  // Hair cap
-  box(sx + 4*px, y + 1*px, 8*px, 3*px, hair);
-  box(sx + 3*px, y + 2*px, 10*px, 2*px, hair);
-
-  // Side bangs (Ghibli softness)
-  box(sx + 3*px, y + 4*px, 2*px, 2*px, hair);
-  box(sx + 11*px, y + 4*px, 2*px, 2*px, hair);
-
-  // Eyes (big but not anime)
-  box(sx + 6*px, y + 4*px, 1*px, 1*px, eye);
-  box(sx + 9*px, y + 4*px, 1*px, 1*px, eye);
-  // tiny highlight
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  box(sx + 6*px, y + 3*px, 1*px, 1*px, eye2);
-  box(sx + 9*px, y + 3*px, 1*px, 1*px, eye2);
-  ctx.restore();
-
-  // Blush
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  box(sx + 5*px, y + 5*px, 1*px, 1*px, blush);
-  box(sx + 10*px, y + 5*px, 1*px, 1*px, blush);
-  ctx.restore();
-
-  // ---- BODY / TUNIC (Zelda read) ----
-  // Torso
-  oBox(sx + 4*px, y + 8*px, 8*px, 7*px, tunic);
-  // Shadow side
-  ctx.save();
-  ctx.globalAlpha = 0.55;
-  box(sx + 9*px, y + 8*px, 3*px, 7*px, tunic2);
-  ctx.restore();
-
-  // Belt
-  box(sx + 4*px, y + 12*px, 8*px, 2*px, belt);
-  // Buckle
-  box(sx + 7*px, y + 12*px, 2*px, 2*px, metal);
-
-  // Strap (satchel strap)
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  box(sx + 5*px, y + 9*px, 1*px, 6*px, strap);
-  box(sx + 6*px, y + 10*px, 1*px, 6*px, strap);
-  ctx.restore();
-
-  // Satchel (small, adventure vibe)
-  oBox(sx + 2*px, y + 12*px, 3*px, 3*px, bag);
-
-  // ---- ARMS ----
-  // Left arm
-  box(sx + 2*px, y + 9*px, 2*px, 5*px, tunic);
-  box(sx + 2*px, y + 14*px, 2*px, 2*px, skin);
-  // Right arm
-  box(sx + 12*px, y + 9*px, 2*px, 5*px, tunic);
-  box(sx + 12*px, y + 14*px, 2*px, 2*px, skin);
-
-  // ---- LEGS / BOOTS ----
-  // Shorts/undercloth hint
-  ctx.save();
-  ctx.globalAlpha = 0.35;
-  box(sx + 5*px, y + 15*px, 6*px, 1*px, "rgba(0,0,0,.5)");
-  ctx.restore();
-
-  // Boots
-  oBox(sx + 5*px, y + 16*px, 3*px, 4*px, boots);
-  oBox(sx + 8*px, y + 16*px, 3*px, 4*px, boots);
-
-  // Tiny toe shine (makes it feel “painted” not flat)
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  box(sx + 6*px, y + 18*px, 1*px, 1*px, "#fff");
-  box(sx + 9*px, y + 18*px, 1*px, 1*px, "#fff");
-  ctx.restore();
-}
-
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-function lerp(a,b,t){ return a + (b-a)*t; }
-
-// ===== OVERRIDE: Cute (but slightly dark) blonde girl sprite, subtle motions =====
-// Paste at VERY BOTTOM of game.js (after clamp/lerp). Last definition wins.
-
-function drawPlayerGhibliZelda(ctx, p){
-  // Slightly bigger than the collider, not huge
-  const px = 2;
-  const W = 18 * px;
-  const H = 22 * px;
-
-  // Anchor: centered on collider, feet at bottom
-  const cx = p.x + p.w/2;
-  const feetY = p.y + p.h + 2;
-  const sx = Math.round(cx - W/2);
-  const sy = Math.round(feetY - H - (p.z || 0));
-
-  // --- Determine “moving” without touching update() ---
-  // Track last position to get speed (paste-only friendly)
   const now = performance.now();
   p._sprLastT ??= now;
   p._sprLastX ??= p.x;
@@ -623,10 +512,9 @@ function drawPlayerGhibliZelda(ctx, p){
   p._sprLastX = p.x;
   p._sprLastY = p.y;
 
-  const moving = speed > 10;       // threshold
-  const running = speed > 170;     // your run speed ~220, walk ~150
+  const moving  = speed > 10;
+  const running = speed > 170;
 
-  // --- Subtle animation: never more than 1px swings ---
   const t = now * 0.0022;
   const walkPhase = moving ? Math.sin(t * (running ? 9.0 : 6.0)) : 0;
 
@@ -635,11 +523,15 @@ function drawPlayerGhibliZelda(ctx, p){
   const armA  = moving ? Math.round(-walkPhase * 1) : 0;
   const armB  = moving ? Math.round(walkPhase * 1) : 0;
 
-  // Idle breathe (very soft)
   const acting = (p.jumpT>0)||(p.dodgeT>0)||(p.punchT>0);
   const breathe = (!moving && !acting) ? Math.round(Math.sin(t*0.9) * 1) : 0;
 
-  // Blink (quick, cute)
+  // Punch jab: tiny forward nudge (super subtle)
+  const jab = (p.punchT > 0) ? Math.round(Math.sin((1 - (p.punchT/0.12)) * Math.PI) * 1) : 0;
+  const faceX = p.faceX || 0;
+  const faceY = p.faceY || 1;
+
+  // Blink
   p._blinkT ??= 1.7 + Math.random()*2.7;
   p._blinkHold ??= 0;
   if (p._blinkHold > 0) p._blinkHold = Math.max(0, p._blinkHold - dt);
@@ -654,13 +546,12 @@ function drawPlayerGhibliZelda(ctx, p){
 
   const y = sy + breathe;
 
-  // Palette: cute but slightly dark vibe
   const outline = "rgba(10,10,18,.55)";
   const skin    = "#f2c8b0";
   const blush   = "rgba(255,120,160,.18)";
-  const hair    = "#f4db7d";  // blonde
-  const hairS   = "#c9b058";  // shade blonde
-  const coat    = "#1a1a22";  // dark outfit
+  const hair    = "#f4db7d";
+  const hairS   = "#c9b058";
+  const coat    = "#1a1a22";
   const coatS   = "#2a2a34";
   const scarf   = "rgba(138,46,255,.85)";
   const boot    = "#111116";
@@ -670,7 +561,6 @@ function drawPlayerGhibliZelda(ctx, p){
   const blueS   = "#2b6ea8";
   const white   = "rgba(255,255,255,.85)";
 
-  // helpers
   function fill(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
   function stroke(x,y,w,h){
     ctx.strokeStyle = outline;
@@ -678,7 +568,7 @@ function drawPlayerGhibliZelda(ctx, p){
     ctx.strokeRect(x,y,w,h);
   }
 
-  // Ground shadow (keeps her from “floating”)
+  // Ground shadow
   ctx.save();
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = "#000";
@@ -687,68 +577,70 @@ function drawPlayerGhibliZelda(ctx, p){
   ctx.fill();
   ctx.restore();
 
-  // ===== HEAD (bigger eyes, cute proportions) =====
-  fill(sx+5*px, y+1*px, 8*px, 7*px, skin);
-  fill(sx+6*px, y+0*px, 6*px, 1*px, skin);
+  // tiny jab offset applied to upper body only
+  const jabX = jab * Math.sign(faceX || 1);
+  const jabY = jab * Math.sign(faceY || 0);
 
-  // Hair cap + side strands
-  fill(sx+5*px, y+1*px, 8*px, 3*px, hairS);
-  fill(sx+5*px, y+1*px, 8*px, 2*px, hair);
-  fill(sx+4*px, y+3*px, 2*px, 4*px, hairS);
-  fill(sx+12*px, y+3*px, 2*px, 4*px, hairS);
+  // HEAD
+  fill(sx+5*px + jabX, y+1*px + jabY, 8*px, 7*px, skin);
+  fill(sx+6*px + jabX, y+0*px + jabY, 6*px, 1*px, skin);
 
-  // Eyes: bigger + blue (but not creepy)
+  // Hair
+  fill(sx+5*px + jabX, y+1*px + jabY, 8*px, 3*px, hairS);
+  fill(sx+5*px + jabX, y+1*px + jabY, 8*px, 2*px, hair);
+  fill(sx+4*px + jabX, y+3*px + jabY, 2*px, 4*px, hairS);
+  fill(sx+12*px+ jabX, y+3*px + jabY, 2*px, 4*px, hairS);
+
+  // Eyes
   if (blinking){
-    fill(sx+7*px, y+5*px, 2*px, 1*px, eyeLine);
-    fill(sx+10*px, y+5*px, 2*px, 1*px, eyeLine);
+    fill(sx+7*px + jabX, y+5*px + jabY, 2*px, 1*px, eyeLine);
+    fill(sx+10*px+ jabX, y+5*px + jabY, 2*px, 1*px, eyeLine);
   } else {
-    // iris
-    fill(sx+7*px,  y+4*px, 2*px, 3*px, blueS);
-    fill(sx+10*px, y+4*px, 2*px, 3*px, blueS);
-    // bright iris top-left
-    fill(sx+7*px,  y+4*px, 1*px, 1*px, blue);
-    fill(sx+10*px, y+4*px, 1*px, 1*px, blue);
-    // pupil
-    fill(sx+8*px,  y+6*px, 1*px, 1*px, eyeLine);
-    fill(sx+11*px, y+6*px, 1*px, 1*px, eyeLine);
-    // highlight
-    fill(sx+8*px,  y+4*px, 1*px, 1*px, white);
-    fill(sx+11*px, y+4*px, 1*px, 1*px, white);
+    fill(sx+7*px + jabX, y+4*px + jabY, 2*px, 3*px, blueS);
+    fill(sx+10*px+ jabX, y+4*px + jabY, 2*px, 3*px, blueS);
+    fill(sx+7*px + jabX, y+4*px + jabY, 1*px, 1*px, blue);
+    fill(sx+10*px+ jabX, y+4*px + jabY, 1*px, 1*px, blue);
+    fill(sx+8*px + jabX, y+6*px + jabY, 1*px, 1*px, eyeLine);
+    fill(sx+11*px+ jabX, y+6*px + jabY, 1*px, 1*px, eyeLine);
+    fill(sx+8*px + jabX, y+4*px + jabY, 1*px, 1*px, white);
+    fill(sx+11*px+ jabX, y+4*px + jabY, 1*px, 1*px, white);
   }
 
-  // blush (tiny)
+  // blush
   ctx.save();
   ctx.globalAlpha = 0.8;
-  fill(sx+6*px, y+6*px, 1*px, 1*px, blush);
-  fill(sx+12*px, y+6*px, 1*px, 1*px, blush);
+  fill(sx+6*px + jabX, y+6*px + jabY, 1*px, 1*px, blush);
+  fill(sx+12*px+ jabX, y+6*px + jabY, 1*px, 1*px, blush);
   ctx.restore();
 
-  stroke(sx+5*px, y+1*px, 8*px, 7*px);
+  stroke(sx+5*px + jabX, y+1*px + jabY, 8*px, 7*px);
 
-  // ===== SCARF (violet accent) =====
-  fill(sx+6*px, y+8*px, 6*px, 2*px, scarf);
-  stroke(sx+6*px, y+8*px, 6*px, 2*px);
+  // scarf
+  fill(sx+6*px + jabX, y+8*px + jabY, 6*px, 2*px, scarf);
+  stroke(sx+6*px + jabX, y+8*px + jabY, 6*px, 2*px);
 
-  // ===== BODY (dark coat) =====
-  fill(sx+6*px, y+10*px, 6*px, 7*px, coat);
+  // body
+  fill(sx+6*px + jabX, y+10*px+ jabY, 6*px, 7*px, coat);
   ctx.save(); ctx.globalAlpha = 0.55;
-  fill(sx+9*px, y+10*px, 3*px, 7*px, coatS);
+  fill(sx+9*px + jabX, y+10*px+ jabY, 3*px, 7*px, coatS);
   ctx.restore();
-  stroke(sx+6*px, y+10*px, 6*px, 7*px);
+  stroke(sx+6*px + jabX, y+10*px+ jabY, 6*px, 7*px);
 
-  // ===== ARMS (subtle 1px sway) =====
-  fill(sx+4*px, y+(11+armA)*px, 2*px, 5*px, coat);
-  fill(sx+12*px, y+(11+armB)*px, 2*px, 5*px, coat);
-  stroke(sx+4*px, y+(11+armA)*px, 2*px, 5*px);
-  stroke(sx+12*px, y+(11+armB)*px, 2*px, 5*px);
+  // arms (subtle sway, plus punch slightly forward)
+  fill(sx+4*px + jabX, y+(11+armA)*px + jabY, 2*px, 5*px, coat);
+  fill(sx+12*px+ jabX, y+(11+armB)*px + jabY, 2*px, 5*px, coat);
+  stroke(sx+4*px + jabX, y+(11+armA)*px + jabY, 2*px, 5*px);
+  stroke(sx+12*px+ jabX, y+(11+armB)*px + jabY, 2*px, 5*px);
 
-  // ===== LEGS / BOOTS (tiny step) =====
-  fill(sx+7*px, y+(17+footA)*px, 2*px, 2*px, sock);
+  // legs
+  fill(sx+7*px,  y+(17+footA)*px, 2*px, 2*px, sock);
   fill(sx+10*px, y+(17+footB)*px, 2*px, 2*px, sock);
 
-  fill(sx+7*px, y+(19+footA)*px, 2*px, 3*px, boot);
+  fill(sx+7*px,  y+(19+footA)*px, 2*px, 3*px, boot);
   fill(sx+10*px, y+(19+footB)*px, 2*px, 3*px, boot);
-  stroke(sx+7*px, y+(19+footA)*px, 2*px, 3*px);
+  stroke(sx+7*px,  y+(19+footA)*px, 2*px, 3*px);
   stroke(sx+10*px, y+(19+footB)*px, 2*px, 3*px);
 }
 
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
