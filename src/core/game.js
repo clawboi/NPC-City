@@ -266,11 +266,20 @@ export class Game {
     this.player.x = clamp(this.player.x, 0, this.world.w - this.player.w);
     this.player.y = clamp(this.player.y, 0, this.world.h - this.player.h);
 
-    // Camera follow
-    const targetX = this.player.x + this.player.w/2 - this.camera.vw/2;
-    const targetY = this.player.y + this.player.h/2 - this.camera.vh/2;
-    this.camera.x = lerp(this.camera.x, clamp(targetX, 0, this.world.w - this.camera.vw), 0.12);
-    this.camera.y = lerp(this.camera.y, clamp(targetY, 0, this.world.h - this.camera.vh), 0.12);
+    // Camera follow (smooth, then pixel-snap to stop shimmer)
+const targetX = this.player.x + this.player.w * 0.5 - this.camera.vw * 0.5;
+const targetY = this.player.y + this.player.h * 0.5 - this.camera.vh * 0.5;
+
+const clampedX = clamp(targetX, 0, this.world.w - this.camera.vw);
+const clampedY = clamp(targetY, 0, this.world.h - this.camera.vh);
+
+// Smooth follow
+this.camera.x = lerp(this.camera.x, clampedX, 0.12);
+this.camera.y = lerp(this.camera.y, clampedY, 0.12);
+
+// Pixel-snap (kills the “static/shaky” look)
+this.camera.x = Math.round(this.camera.x);
+this.camera.y = Math.round(this.camera.y);
 
     // Determine area name (simple rule: based on regions)
     this.player.area = this.getAreaName(this.player.x, this.player.y, this.player.role);
