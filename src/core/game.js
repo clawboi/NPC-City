@@ -299,6 +299,11 @@ this.inv.applyToPlayer(this.player); // ensures player.held exists
 
     // keep held item updated after hotkeys
 if (this.inv) this.inv.applyToPlayer(this.player);
+if (this.ui.setInventory){
+  const held = this.player.held;
+  const heldType = (typeof held === "string") ? held : (held?.type || null);
+  this.ui.setInventory({ slotIndex: this.inv.active, heldType });
+}
 
     // autosave
     this._saveTimer = (this._saveTimer || 0) + dt;
