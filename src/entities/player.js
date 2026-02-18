@@ -1,9 +1,11 @@
 // src/entities/player.js
-// NPC City Player v2: bigger/cleaner silhouette, less boxy head, smoother walk.
-// Key changes:
-// - removes strokeRect “square head” look (uses pixel-outline instead)
-// - slightly bigger (px=3) but still thin + a bit shorter overall
-// - improved step: foot forward/back + tiny hip sway + coat tail lag
+// NPC City Player v3: keep the improved head, but make the whole character smaller + shorter,
+// and upgrade torso/legs to feel more "person" and less blocky.
+// Changes:
+// - px back to 2 (not huge)
+// - sprite grid is 16x17 (actually shorter)
+// - better legs + coat taper
+// - smoother step roll (less stiff)
 
 export class Player {
   constructor(){
@@ -55,7 +57,7 @@ export class Player {
     const acting = (p.jumpT > 0) || (p.dodgeT > 0) || (p.punchT > 0);
 
     // step
-    const stepRate = moving ? (running ? 10.5 : 7.6) : 1.0;
+    const stepRate = moving ? (running ? 10.0 : 7.3) : 1.0;
     this._step += dt * stepRate;
 
     // blink
@@ -70,29 +72,27 @@ export class Player {
     }
     const blinking = this._blinkHold > 0;
 
-    // --- sizing: bigger but still thin, and a bit shorter ---
-    const px = 3;
+    // ---- size: smaller + actually shorter ----
+    const px = 2;
 
-    // sprite grid size (in pixels, before scaling)
-    const SW = 16; // thinner than before
-    const SH = 20; // slightly shorter than before
+    const SW = 16;
+    const SH = 17; // SHORTER than before (was 20)
     const W = SW * px;
     const H = SH * px;
 
-    // anchor at feet
     const cx = p.x + p.w/2;
     const feetY = p.y + p.h + 2;
 
-    // gentle bob (subtle)
+    // tiny bob, subtle
     const idle = (!moving && !acting) ? Math.sin(now * 0.0017) : 0;
     const bob  = (!acting)
-      ? (moving ? Math.sin(this._step * 2.0) * 0.7 : idle * 0.8)
+      ? (moving ? Math.sin(this._step * 2.0) * 0.5 : idle * 0.6)
       : 0;
 
     const sx = Math.round(cx - W/2);
     const sy = Math.round(feetY - H - (p.z || 0) + bob);
 
-    // palette (same vibe)
+    // palette
     const outline = "rgba(12,12,20,.70)";
     const skin    = "#f3ccb6";
     const hair    = "#f6e08a";
@@ -108,38 +108,34 @@ export class Player {
     const white   = "rgba(255,255,255,.90)";
     const blush   = "rgba(255,120,160,.16)";
 
-    // --- helpers ---
-    const P = (ix, iy, c) => { // single pixel in sprite grid
+    const P = (ix, iy, c) => {
       ctx.fillStyle = c;
       ctx.fillRect(sx + ix*px, sy + iy*px, px, px);
     };
 
-    const outlinePixel = (ix, iy) => P(ix, iy, outline);
-
-    // soft shadow
+    // shadow
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#000";
     ctx.beginPath();
-    ctx.ellipse(cx, feetY + 2, 13, 6, 0, 0, Math.PI*2);
+    ctx.ellipse(cx, feetY + 2, 12, 6, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.restore();
 
-    // --- walk motion (nicer step) ---
-    const phaseA = Math.sin(this._step);
-    const phaseB = Math.sin(this._step + Math.PI);
+    // --- motion: step roll ---
+    const a = Math.sin(this._step);
+    const b = Math.sin(this._step + Math.PI);
 
     const side = (face === "E" || face === "W");
     const dirSign = (face === "E" || face === "S") ? 1 : -1;
 
-    // stride/lift in sprite pixels
     const stride = moving ? (running ? 2 : 1) : 0;
     const lift   = moving ? 1 : 0;
 
-    // feet: forward/back > up/down
-    const fA = phaseA * stride * dirSign;
-    const fB = phaseB * stride * dirSign;
+    const fA = a * stride * dirSign;
+    const fB = b * stride * dirSign;
 
+    // softer lift (knees, not pogo)
     const upA = Math.max(0, Math.sin(this._step)) * lift;
     const upB = Math.max(0, Math.sin(this._step + Math.PI)) * lift;
 
@@ -148,149 +144,142 @@ export class Player {
     const footBx = side ? Math.round(fB) : 0;
     const footBy = side ? -Math.round(upB) : Math.round(fB);
 
-    // hips + coat lag
-    const hipSway = (moving && !acting) ? Math.round(Math.sin(this._step) * 1) : 0;
-    const coatLag = (moving && !acting) ? Math.round(Math.sin(this._step - 0.6) * 1) : 0;
+    // subtle hip sway + coat tail lag
+    const hip = (moving && !acting) ? Math.round(Math.sin(this._step) * 1) : 0;
+    const tail = (moving && !acting) ? Math.round(Math.sin(this._step - 0.7) * 1) : 0;
 
     // arms swing opposite
     const armSwing = moving ? 1 : 0;
-    const armA = -phaseA * armSwing * dirSign;
-    const armB = -phaseB * armSwing * dirSign;
+    const armA = -a * armSwing * dirSign;
+    const armB = -b * armSwing * dirSign;
     const armAx = side ? Math.round(armA) : 0;
     const armAy = side ? 0 : -Math.round(armA);
     const armBx = side ? Math.round(armB) : 0;
     const armBy = side ? 0 : -Math.round(armB);
 
-    // punching
     const punching = p.punchT > 0;
 
     // ==========================================================
-    // SPRITE DRAW (pixel-y but more “person” silhouette)
-    //
-    // Grid: 16w x 20h
-    //
-    // Head is rounded via pixels and hair tufts break the box.
+    // DRAW: Head (same style you liked)
     // ==========================================================
-
-    // --- outline base (draw outlines first so it feels “shaped”) ---
-    // head outline (rounded-ish)
+    // head outline pixels
     [
-      [6,1],[7,1],[8,1],[9,1],
-      [5,2],[10,2],
+      [6,0],[7,0],[8,0],[9,0],
+      [5,1],[10,1],
+      [4,2],[11,2],
       [4,3],[11,3],
       [4,4],[11,4],
-      [4,5],[11,5],
-      [5,6],[10,6],
-      [6,7],[7,7],[8,7],[9,7],
+      [5,5],[10,5],
+      [6,6],[7,6],[8,6],[9,6]
+    ].forEach(([ix,iy])=>P(ix,iy,outline));
 
-      // neck/shoulders outline
-      [6,8],[9,8],
-      [5,9],[10,9],
-
-      // body outline
-      [5,10],[10,10],
-      [4,11],[11,11],
-      [4,12],[11,12],
-      [4,13],[11,13],
-      [5,14],[10,14],
-
-      // coat tail outline (adds shape)
-      [6,15],[9,15],
-      [6,16],[9,16]
-    ].forEach(([ix,iy])=>outlinePixel(ix,iy));
-
-    // --- hair silhouette to break square ---
-    // top hair + tufts
+    // hair silhouette + tufts (breaks box)
     [
-      [5,2],[6,2],[7,2],[8,2],[9,2],[10,2],
+      [5,1],[6,1],[7,1],[8,1],[9,1],[10,1],
+      [5,2],[10,2],
       [5,3],[10,3],
-      [5,4],[10,4],
-      // side strands
-      [4,5],[12,5],
-      [4,6],[12,6]
+      [4,4],[12,4],
+      [4,5],[12,5]
     ].forEach(([ix,iy])=>P(ix,iy,hairS));
     [
+      [6,1],[7,1],[8,1],[9,1],
       [6,2],[7,2],[8,2],[9,2],
-      [6,3],[7,3],[8,3],[9,3],
-      [6,4],[7,4],[8,4],[9,4]
+      [6,3],[7,3],[8,3],[9,3]
     ].forEach(([ix,iy])=>P(ix,iy,hair));
 
-    // --- face skin (rounded block) ---
+    // face skin (rounded)
     [
+      [5,2],[6,2],[7,2],[8,2],[9,2],[10,2],
       [5,3],[6,3],[7,3],[8,3],[9,3],[10,3],
       [5,4],[6,4],[7,4],[8,4],[9,4],[10,4],
-      [5,5],[6,5],[7,5],[8,5],[9,5],[10,5],
-      [6,6],[7,6],[8,6],[9,6]
+      [6,5],[7,5],[8,5],[9,5]
     ].forEach(([ix,iy])=>P(ix,iy,skin));
 
     // blush
-    P(6,6,blush); P(9,6,blush);
+    P(6,5,blush); P(9,5,blush);
 
-    // eyes (tiny but expressive)
+    // eyes
     if (blinking){
-      P(6,5,eyeLine); P(9,5,eyeLine);
+      P(6,4,eyeLine); P(9,4,eyeLine);
     } else {
-      P(6,5,blueS); P(9,5,blueS);
-      P(6,6,blue);  P(9,6,blue);
-      P(7,5,white); P(10,5,white);
-      P(7,6,eyeLine); P(10,6,eyeLine);
+      P(6,4,blueS); P(9,4,blueS);
+      P(6,5,blue);  P(9,5,blue);
+      P(7,4,white); P(10,4,white);
+      P(7,5,eyeLine); P(10,5,eyeLine);
     }
 
-    // --- scarf ---
-    [ [6,8],[7,8],[8,8],[9,8], [7,9],[8,9] ].forEach(([ix,iy])=>P(ix,iy,scarf));
+    // scarf (smaller)
+    [ [6,7],[7,7],[8,7],[9,7], [7,8],[8,8] ].forEach(([ix,iy])=>P(ix,iy,scarf));
 
-    // --- torso/coat (thin body, with shading + sway) ---
-    const bodyX = hipSway;
-    // main coat
-    for (let iy=10; iy<=14; iy++){
-      for (let ix=6; ix<=9; ix++) P(ix+bodyX, iy, coat);
-      // shade on right
-      P(9+bodyX, iy, coatS);
-    }
-    // coat tail (lag)
-    P(7+bodyX+coatLag, 15, coat);
-    P(8+bodyX+coatLag, 15, coat);
-    P(7+bodyX+coatLag, 16, coatS);
-    P(8+bodyX+coatLag, 16, coatS);
+    // ==========================================================
+    // DRAW: Body + legs (better + shorter)
+    // Grid rows left:
+    // y=9..16 for torso/legs/feet
+    // ==========================================================
 
-    // --- arms ---
+    const bodyX = hip;
+
+    // shoulders (thin taper)
+    P(6+bodyX, 9, coat);
+    P(7+bodyX, 9, coat);
+    P(8+bodyX, 9, coat);
+    P(9+bodyX, 9, coatS);
+
+    // torso (tapered coat)
+    // top torso
+    for (let ix=6; ix<=9; ix++) P(ix+bodyX, 10, coat);
+    P(9+bodyX,10,coatS);
+
+    // mid torso (slightly narrower)
+    for (let ix=6; ix<=8; ix++) P(ix+bodyX, 11, coat);
+    P(9+bodyX,11,coatS);
+
+    // lower torso
+    for (let ix=6; ix<=8; ix++) P(ix+bodyX, 12, coat);
+    P(9+bodyX,12,coatS);
+
+    // coat tail (short, lag)
+    P(7+bodyX+tail, 13, coat);
+    P(8+bodyX+tail, 13, coatS);
+
+    // arms (shorter, cleaner)
     if (!punching){
-      // left arm
-      P(5+armAx+bodyX, 11+armAy, coat);
-      P(5+armAx+bodyX, 12+armAy, coat);
-      P(5+armAx+bodyX, 13+armAy, coatS);
+      // left
+      P(5+bodyX+armAx, 10+armAy, coat);
+      P(5+bodyX+armAx, 11+armAy, coatS);
 
-      // right arm
-      P(10+armBx+bodyX, 11+armBy, coat);
-      P(10+armBx+bodyX, 12+armBy, coat);
-      P(10+armBx+bodyX, 13+armBy, coatS);
+      // right
+      P(10+bodyX+armBx, 10+armBy, coat);
+      P(10+bodyX+armBx, 11+armBy, coatS);
     } else {
-      // punch pose: extend one arm by facing
       let pxDirX = 0, pxDirY = 0;
       if (face === "E") pxDirX = 2;
       if (face === "W") pxDirX = -2;
       if (face === "N") pxDirY = -1;
       if (face === "S") pxDirY = 1;
 
-      // both arms slightly forward (keeps it simple)
-      P(5+bodyX+pxDirX, 12+pxDirY, coat);
-      P(6+bodyX+pxDirX, 12+pxDirY, coatS);
-      P(10+bodyX+pxDirX,12+pxDirY, coat);
-      P(9+bodyX+pxDirX, 12+pxDirY, coatS);
-
+      P(6+bodyX+pxDirX, 11+pxDirY, coat);
+      P(7+bodyX+pxDirX, 11+pxDirY, coatS);
+      P(9+bodyX+pxDirX, 11+pxDirY, coat);
       this._drawPunchSpark(ctx, p, face);
     }
 
-    // --- legs/feet (thin, animated) ---
-    // leg A (left)
-    P(7+footAx+bodyX, 17, sock);
-    P(7+footAx+bodyX, 18+footAy, boot);
-    P(7+footAx+bodyX, 19+footAy, boot);
+    // legs: add knee pixel so it reads as walking, not blocks
+    const legBaseY = 14;
 
-    // leg B (right)
-    P(8+footBx+bodyX, 17, sock);
-    P(8+footBx+bodyX, 18+footBy, boot);
-    P(8+footBx+bodyX, 19+footBy, boot);
+    // left leg (A)
+    P(7+bodyX, legBaseY, coatS); // hip/short
+    P(7+bodyX+footAx, legBaseY+1, sock);
+    P(7+bodyX+footAx, legBaseY+2+footAy, boot);
+
+    // right leg (B)
+    P(8+bodyX, legBaseY, coatS);
+    P(8+bodyX+footBx, legBaseY+1, sock);
+    P(8+bodyX+footBx, legBaseY+2+footBy, boot);
+
+    // second boot pixels (weight)
+    P(7+bodyX+footAx, legBaseY+3+footAy, boot);
+    P(8+bodyX+footBx, legBaseY+3+footBy, boot);
   }
 
   _faceDir(fx, fy){
