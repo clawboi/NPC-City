@@ -66,7 +66,7 @@ export class Game {
   }
 
   startNew(role){
-    const spawn = this.world.getSpawn(role);
+    const spawn = this..getSpawn(role);
     this.player.role = role;
     this.player.x = spawn.x;
     this.player.y = spawn.y;
@@ -160,7 +160,7 @@ export class Game {
 
     // Reset spawn quick dev key
     if (this.input.pressed("r")){
-      const sp = this.world.getSpawn(this.player.role);
+      const sp = this..getSpawn(this.player.role);
       this.player.x = sp.x;
       this.player.y = sp.y;
       this.player.area = sp.area;
@@ -249,7 +249,7 @@ export class Game {
     }
 
     // Interact prompt (near landmarks)
-    const lm = this.world.nearestLandmark?.(
+    const lm = this..nearestLandmark?.(
       this.player.x + this.player.w/2,
       this.player.y + this.player.h/2,
       62
@@ -299,16 +299,16 @@ export class Game {
     this.moveWithCollision(dx, 0);
     this.moveWithCollision(0, dy);
 
-    // Clamp to world bounds
-    this.player.x = clamp(this.player.x, 0, this.world.w - this.player.w);
-    this.player.y = clamp(this.player.y, 0, this.world.h - this.player.h);
+    // Clamp to  bounds
+    this.player.x = clamp(this.player.x, 0, this..w - this.player.w);
+    this.player.y = clamp(this.player.y, 0, this..h - this.player.h);
 
     // Camera follow (smooth, then pixel-snap to stop shimmer)
     const targetX = this.player.x + this.player.w * 0.5 - this.camera.vw * 0.5;
     const targetY = this.player.y + this.player.h * 0.5 - this.camera.vh * 0.5;
 
-    const clampedX = clamp(targetX, 0, this.world.w - this.camera.vw);
-    const clampedY = clamp(targetY, 0, this.world.h - this.camera.vh);
+    const clampedX = clamp(targetX, 0, this..w - this.camera.vw);
+    const clampedY = clamp(targetY, 0, this..h - this.camera.vh);
 
     this.camera.x = lerp(this.camera.x, clampedX, 0.12);
     this.camera.y = lerp(this.camera.y, clampedY, 0.12);
@@ -354,7 +354,7 @@ export class Game {
     if (!dx && !dy) return;
 
     const next = { x: this.player.x + dx, y: this.player.y + dy, w: this.player.w, h: this.player.h };
-    if (!this.world.hitsSolid(next)){
+    if (!this..hitsSolid(next)){
       this.player.x = next.x;
       this.player.y = next.y;
       return;
@@ -366,7 +366,7 @@ export class Game {
       const sx = dx * (i/steps);
       const sy = dy * (i/steps);
       const test = { x: this.player.x + sx, y: this.player.y + sy, w:this.player.w, h:this.player.h };
-      if (!this.world.hitsSolid(test)){
+      if (!this..hitsSolid(test)){
         this.player.x = test.x;
         this.player.y = test.y;
       } else {
@@ -387,11 +387,20 @@ export class Game {
     const ctx = this.ctx;
 
     // World
-    this.world.draw(ctx, this.camera);
+this.world.draw(ctx, this.camera);
 
-    // Entities + FX
-    ctx.save();
-    ctx.translate(-this.camera.x, -this.camera.y);
+// PATCH: town texture + 2.5D depth (world-space)
+ctx.save();
+ctx.translate(-this.camera.x, -this.camera.y);
+drawTownVisualPass(ctx, this.world);
+ctx.restore();
+
+// PATCH: atmosphere (screen-space)
+drawGhibliAtmosphere(ctx, this.camera);
+
+// Entities + FX
+ctx.save();
+ctx.translate(-this.camera.x, -this.camera.y);
 
     // FX under player
     for (const f of this.fx){
@@ -644,3 +653,142 @@ function drawPlayerGhibliZelda(ctx, p){
 
 function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 function lerp(a,b,t){ return a + (b-a)*t; }
+
+// ============================
+// PATCH: TOWN VISUAL PASS (2.5D + texture)
+// world-space (uses world coordinates)
+// ============================
+function drawTownVisualPass(ctx, world){
+  ctx.save();
+
+  // --- 1) Soft directional shadow for buildings (fake depth) ---
+  ctx.globalAlpha = 0.20;
+  ctx.fillStyle = "rgba(0,0,0,.9)";
+  for(const b of world.buildings){
+    // drop shadow down-right
+    ctx.fillRect(b.x + 6, b.y + 8, b.w, b.h);
+  }
+  ctx.globalAlpha = 1;
+
+  // --- 2) Building highlights + side shade (instant “chunk”) ---
+  for(const b of world.buildings){
+    // top highlight strip
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    ctx.fillRect(b.x+2, b.y+2, b.w-4, 6);
+
+    // side shade strip (right side)
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = "rgba(0,0,0,.9)";
+    ctx.fillRect(b.x + b.w - 7, b.y+2, 5, b.h-4);
+
+    ctx.globalAlpha = 1;
+
+    // tiny outline (soft)
+    ctx.strokeStyle = "rgba(10,10,18,.35)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x+1, b.y+1, b.w-2, b.h-2);
+  }
+
+  // --- 3) Road edge highlights (makes roads feel carved in) ---
+  if (world.roads){
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    for(const r of world.roads){
+      // top edge highlight
+      ctx.fillRect(r.x, r.y, r.w, 4);
+      // left edge highlight
+      ctx.fillRect(r.x, r.y, 4, r.h);
+    }
+    ctx.globalAlpha = 1;
+
+    // tiny road cracks (subtle, not noisy)
+    ctx.globalAlpha = 0.10;
+    ctx.strokeStyle = "rgba(0,0,0,.65)";
+    ctx.lineWidth = 2;
+    for(const r of world.roads){
+      for(let i=0;i<6;i++){
+        const x1 = r.x + (Math.random()*r.w)|0;
+        const y1 = r.y + (Math.random()*r.h)|0;
+        const x2 = x1 + ((Math.random()*24)-12);
+        const y2 = y1 + ((Math.random()*24)-12);
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- 4) Grass dithering (Ghibli “alive” ground) ---
+  ctx.globalAlpha = 0.08;
+  for(let i=0;i<240;i++){
+    const x = (Math.random()*world.w)|0;
+    const y = (Math.random()*world.h)|0;
+    ctx.fillStyle = Math.random()<0.5 ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.25)";
+    ctx.fillRect(x,y,1,1);
+  }
+  ctx.globalAlpha = 1;
+
+  // --- 5) Tree canopy shadow blobs (cute depth) ---
+  if (world.trees){
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(0,0,0,.65)";
+    for(const t of world.trees){
+      ctx.beginPath();
+      ctx.ellipse(t.x+6, t.y+10, 14, 8, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+// ============================
+// PATCH: GHIBLI ATMOSPHERE (screen-space)
+// makes it feel like a “scene”, not a flat map
+// ============================
+function drawGhibliAtmosphere(ctx, cam){
+  ctx.save();
+
+  // warm sunlight haze
+  let g = ctx.createRadialGradient(
+    cam.vw*0.55, cam.vh*0.35, Math.min(cam.vw,cam.vh)*0.10,
+    cam.vw*0.55, cam.vh*0.35, Math.max(cam.vw,cam.vh)*0.95
+  );
+  g.addColorStop(0, "rgba(255,220,180,.12)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,cam.vw,cam.vh);
+
+  // subtle violet dusk tint (cute-but-dark mood)
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = "rgba(138,46,255,1)";
+  ctx.fillRect(0,0,cam.vw,cam.vh);
+  ctx.globalAlpha = 1;
+
+  // film grain (tiny)
+  ctx.globalAlpha = 0.10;
+  for(let i=0;i<140;i++){
+    const x = (Math.random()*cam.vw)|0;
+    const y = (Math.random()*cam.vh)|0;
+    const s = 1 + ((Math.random()*2)|0);
+    ctx.fillStyle = Math.random()<0.5 ? "rgba(0,0,0,.55)" : "rgba(255,255,255,.30)";
+    ctx.fillRect(x,y,s,s);
+  }
+  ctx.globalAlpha = 1;
+
+  // vignette
+  const v = ctx.createRadialGradient(
+    cam.vw*0.5, cam.vh*0.45, Math.min(cam.vw,cam.vh)*0.20,
+    cam.vw*0.5, cam.vh*0.45, Math.max(cam.vw,cam.vh)*0.85
+  );
+  v.addColorStop(0, "rgba(0,0,0,0)");
+  v.addColorStop(1, "rgba(0,0,0,.32)");
+  ctx.fillStyle = v;
+  ctx.fillRect(0,0,cam.vw,cam.vh);
+
+  ctx.restore();
+}
