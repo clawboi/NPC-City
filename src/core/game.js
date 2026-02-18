@@ -410,24 +410,7 @@ this.camera.y = Math.round(this.camera.y);
     );
     ctx.fill();
 
-    // Body (lift when jumping)
-    const liftY = -this.player.z;
-
-    // Color by role
-    ctx.fillStyle = this.player.role === "police" ? "rgba(120,200,255,.95)"
-                 : this.player.role === "thug" ? "rgba(255,120,170,.95)"
-                 : "rgba(180,255,180,.95)";
-
-    // Dodge tint / iFrames tint
-    if (this.player.iFrames > 0){
-      ctx.fillStyle = "rgba(255,255,255,.90)";
-    }
-
-    ctx.fillRect(this.player.x, this.player.y + liftY, this.player.w, this.player.h);
-
-    // “Accent stripe”
-    ctx.fillStyle = "rgba(138,46,255,.55)";
-    ctx.fillRect(this.player.x, this.player.y + liftY, this.player.w, 3);
+    drawPlayerGhibliZelda(ctx, this.player);
 
     // Punch ring (visual)
     if (this.player.punchT > 0){
@@ -452,6 +435,156 @@ this.world.drawAbove?.(ctx, this.camera);
 ctx.restore();
 
   }
+}
+
+// ===== PLAYER SPRITE: Studio Ghibli x Zelda (no images) =====
+// Design notes (why it feels right):
+// - Big readable head + eyes (Ghibli warmth) but compact silhouette (Zelda clarity)
+// - Tunic + belt + satchel strap = "adventure" without needing gear systems yet
+// - Soft outline (not harsh black) so it blends with your dreamy UI
+// - Tiny idle-breath bob so the character feels alive even when standing
+
+function drawPlayerGhibliZelda(ctx, p){
+  // Base sprite size in "pixel units"
+  const px = 2; // pixel scale (2 = crisp but detailed on 960x540)
+  const W = 16 * px;
+  const H = 22 * px;
+
+  // Anchor: center on collider, feet at bottom
+  const cx = p.x + p.w/2;
+  const feetY = p.y + p.h + 2;
+  const sx = Math.round(cx - W/2);
+  const sy = Math.round(feetY - H - (p.z || 0));
+
+  // Gentle idle bob (breathing)
+  const t = performance.now() * 0.002;
+  const bob = (p.jumpT > 0 || p.dodgeT > 0 || p.punchT > 0) ? 0 : Math.round(Math.sin(t) * 1);
+  const y = sy + bob;
+
+  // Palette (warm, painterly, "Ghibli-ish" but still game readable)
+  const outline = "rgba(10,10,18,.55)";
+  const skin    = "#f1c7a6";
+  const blush   = "rgba(255,120,160,.28)";
+  const hair    = "#2a1b14";
+  const tunic   = "#2faa53";     // classic heroic green
+  const tunic2  = "#1f7f42";     // shadow green
+  const belt    = "#6b4b2a";
+  const metal   = "#c9c0ae";
+  const boots   = "#2a1f18";
+  const strap   = "#4a3424";
+  const bag     = "#7a5a3a";
+  const eye     = "#1a1a1a";
+  const eye2    = "rgba(255,255,255,.85)";
+
+  // Shadow on ground (already in your code too, but this helps sprite feel anchored)
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(cx, feetY + 2, 12, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // Helper: chunky pixel rect with optional outline
+  function box(x, y, w, h, fill){
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+  }
+  function oBox(x, y, w, h, fill){
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  // ========= SILHOUETTE LAYERS =========
+
+  // Cape-ish back cloth (subtle, not full cape)
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  box(sx + 3*px, y + 9*px, 10*px, 10*px, "rgba(20,40,30,.45)");
+  ctx.restore();
+
+  // ---- HEAD (big + soft) ----
+  // Head base (stepped edges)
+  box(sx + 4*px, y + 1*px, 8*px, 7*px, skin);
+  box(sx + 5*px, y + 0*px, 6*px, 1*px, skin); // top rounding hint
+
+  // Hair cap
+  box(sx + 4*px, y + 1*px, 8*px, 3*px, hair);
+  box(sx + 3*px, y + 2*px, 10*px, 2*px, hair);
+
+  // Side bangs (Ghibli softness)
+  box(sx + 3*px, y + 4*px, 2*px, 2*px, hair);
+  box(sx + 11*px, y + 4*px, 2*px, 2*px, hair);
+
+  // Eyes (big but not anime)
+  box(sx + 6*px, y + 4*px, 1*px, 1*px, eye);
+  box(sx + 9*px, y + 4*px, 1*px, 1*px, eye);
+  // tiny highlight
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  box(sx + 6*px, y + 3*px, 1*px, 1*px, eye2);
+  box(sx + 9*px, y + 3*px, 1*px, 1*px, eye2);
+  ctx.restore();
+
+  // Blush
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  box(sx + 5*px, y + 5*px, 1*px, 1*px, blush);
+  box(sx + 10*px, y + 5*px, 1*px, 1*px, blush);
+  ctx.restore();
+
+  // ---- BODY / TUNIC (Zelda read) ----
+  // Torso
+  oBox(sx + 4*px, y + 8*px, 8*px, 7*px, tunic);
+  // Shadow side
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  box(sx + 9*px, y + 8*px, 3*px, 7*px, tunic2);
+  ctx.restore();
+
+  // Belt
+  box(sx + 4*px, y + 12*px, 8*px, 2*px, belt);
+  // Buckle
+  box(sx + 7*px, y + 12*px, 2*px, 2*px, metal);
+
+  // Strap (satchel strap)
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  box(sx + 5*px, y + 9*px, 1*px, 6*px, strap);
+  box(sx + 6*px, y + 10*px, 1*px, 6*px, strap);
+  ctx.restore();
+
+  // Satchel (small, adventure vibe)
+  oBox(sx + 2*px, y + 12*px, 3*px, 3*px, bag);
+
+  // ---- ARMS ----
+  // Left arm
+  box(sx + 2*px, y + 9*px, 2*px, 5*px, tunic);
+  box(sx + 2*px, y + 14*px, 2*px, 2*px, skin);
+  // Right arm
+  box(sx + 12*px, y + 9*px, 2*px, 5*px, tunic);
+  box(sx + 12*px, y + 14*px, 2*px, 2*px, skin);
+
+  // ---- LEGS / BOOTS ----
+  // Shorts/undercloth hint
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  box(sx + 5*px, y + 15*px, 6*px, 1*px, "rgba(0,0,0,.5)");
+  ctx.restore();
+
+  // Boots
+  oBox(sx + 5*px, y + 16*px, 3*px, 4*px, boots);
+  oBox(sx + 8*px, y + 16*px, 3*px, 4*px, boots);
+
+  // Tiny toe shine (makes it feel “painted” not flat)
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  box(sx + 6*px, y + 18*px, 1*px, 1*px, "#fff");
+  box(sx + 9*px, y + 18*px, 1*px, 1*px, "#fff");
+  ctx.restore();
 }
 
 function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
