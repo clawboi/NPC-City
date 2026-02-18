@@ -291,12 +291,28 @@ export class Player {
       P(10+bx, 12+by, C.shirt1);
       P(9+bx,  12+by, C.skin);
 
-      // lead (use left side arm pixels)
-      const ax = 4+bx + leadX;
-      const ay = 12+by + leadY;
-      P(ax,   ay, C.shirt2);
-      P(ax+1, ay, C.shirt1);
-      P(ax+2, ay, C.skin);
+      // FULL LENGTH ARM (replaces the 3-pixel stub)
+const baseX = 4 + bx;
+const baseY = 12 + by;
+
+// normalize direction to step by 1 pixel each segment
+const stepX = Math.sign(punchDX);
+const stepY = Math.sign(punchDY);
+
+// how long the arm should be (in sprite pixels)
+const armLen = 3 + Math.min(3, Math.abs(punchDX) + Math.abs(punchDY)); // 3..6
+
+// draw sleeve segments
+for (let i = 0; i < armLen; i++){
+  const x = baseX + stepX * i;
+  const y = baseY + stepY * i;
+  P(x, y, (i === armLen-1) ? C.skin : C.shirt2); // last becomes hand
+  // little sleeve shade behind it (optional)
+  if (i > 0 && i < armLen-1) P(x + (stepY ? 1 : 0), y + (stepX ? 1 : 0), C.shirt1);
+}
+
+// hand tip (extra pixel) so it feels like a fist
+P(baseX + stepX * armLen, baseY + stepY * armLen, C.skin);
 
       // if punching E/S, swap so it feels like correct arm leads
       if (punchDX > 0 || punchDY > 0){
@@ -306,11 +322,21 @@ export class Player {
         P(5+bx, 12+by, C.shirt1);
         P(6+bx, 12+by, C.skin);
 
-        const rx = 11+bx + leadX;
-        const ry = 12+by + leadY;
-        P(rx,   ry, C.shirt2);
-        P(rx-1, ry, C.shirt1);
-        P(rx-2, ry, C.skin);
+       const baseX = 11 + bx;
+const baseY = 12 + by;
+
+const stepX = Math.sign(punchDX);
+const stepY = Math.sign(punchDY);
+
+const armLen = 3 + Math.min(3, Math.abs(punchDX) + Math.abs(punchDY));
+
+for (let i = 0; i < armLen; i++){
+  const x = baseX + stepX * i;
+  const y = baseY + stepY * i;
+  P(x, y, (i === armLen-1) ? C.skin : C.shirt2);
+  if (i > 0 && i < armLen-1) P(x + (stepY ? -1 : 0), y + (stepX ? 1 : 0), C.shirt1);
+}
+P(baseX + stepX * armLen, baseY + stepY * armLen, C.skin);
       }
     }
 
