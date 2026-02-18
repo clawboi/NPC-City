@@ -178,15 +178,18 @@ this.inv.applyToPlayer(this.player); // ensures player.held exists
       if (this.ui.toast) this.ui.toast("Reset spawn");
     }
 
-    // input axis + facing
-    const a = this.input.axis();
-    let ax = a.x, ay = a.y;
-    const amag = Math.hypot(ax, ay);
-    if (amag > 0){
-      ax /= amag; ay /= amag;
-      this.player.faceX = ax;
-      this.player.faceY = ay;
-    }
+    // input axis + facing (8-direction snap)
+const a = this.input.axis();
+let ax = a.x, ay = a.y;
+
+// SNAP to -1/0/1 so diagonals are clean
+ax = ax > 0.2 ? 1 : ax < -0.2 ? -1 : 0;
+ay = ay > 0.2 ? 1 : ay < -0.2 ? -1 : 0;
+
+if (ax !== 0 || ay !== 0){
+  this.player.faceX = ax;
+  this.player.faceY = ay;
+}
 
     // jump
     if (this.input.pressed(" ") && this.player.jumpT <= 0){
