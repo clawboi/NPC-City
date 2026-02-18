@@ -58,6 +58,15 @@ export class UI {
           <button class="btn" data-role="police">Police</button>
         </div>
 
+setInventory({ slotIndex, heldType }){
+  this.renderHUD();
+  const el = this.root.querySelector("#hud-inv");
+  if (!el) return;
+  const slot = (slotIndex ?? 0) + 1;
+  const name = (heldType || "empty").toUpperCase();
+  el.textContent = `INV: ${slot} · ${name}`;
+}
+
         <p style="margin-top:12px; opacity:.85">
           Controls:
           <span class="kbd">WASD / Arrows</span>
@@ -93,6 +102,7 @@ export class UI {
       <div class="pill" id="hud-role">ROLE</div>
       <div class="pill" id="hud-area">AREA</div>
       <div class="pill" id="hud-money">$0</div>
+      <div class="pill" id="hud-inv">INV: 1</div>
 
       <div class="stam" aria-label="Stamina">
         <div class="stam-fill" id="hud-stam"></div>
