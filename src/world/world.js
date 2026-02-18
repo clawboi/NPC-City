@@ -5,69 +5,96 @@ export class World {
 
     this.spawns = {
       actor: { x: 520, y: 820, area:"Sunleaf Suburbs" },
-      thug:  { x: 520, y: 820, area:"Sunleaf Suburbs" },
-      police:{ x: 520, y: 820, area:"Sunleaf Suburbs" },
+      thug:  { x: 560, y: 820, area:"Sunleaf Suburbs" },
+      police:{ x: 600, y: 820, area:"Sunleaf Suburbs" },
     };
 
-    this.roads = buildRoads();
+    // ====== NEW: river + park + suburb blocks ======
+    this.river = { x: 0, y: 1188, w: this.w, h: 190 };       // visible water band
+    this.bridge = { x: 1080, y: 1166, w: 240, h: 70 };       // crossing
 
-    // --- SOLIDS (collision) ---
-    this.solids = [
-      { x: 240, y: 220, w: 420, h: 250 },
-      { x: 780, y: 220, w: 520, h: 270 },
-      { x: 1440, y: 260, w: 560, h: 280 },
-      { x: 1580, y: 820, w: 460, h: 260 },
+    this.roads = buildSuburbRoads(this.w, this.h, this.bridge);
 
-      { x: 1820, y: 430, w: 360, h: 210 },
-      { x: 1920, y: 690, w: 330, h: 200 },
+    // Buildings as visible geometry
+    this.buildings = [];
+    this.yards = [];     // purely visual
+    this.park = buildPark();
 
-      { x: 0, y: 1210, w: this.w, h: 290 },
-      { x: 1760, y: 120, w: 520, h: 95 },
-    ];
+    // Build suburb lots + houses placed “on purpose”
+    buildSuburbLots({
+      addBuilding: (b)=>this.buildings.push(b),
+      addYard: (y)=>this.yards.push(y),
+      rng: makeRng(1337),
+    });
 
-    this.bridge = { x: 1010, y: 1170, w: 260, h: 64 };
+    // SOLIDS: auto from buildings + a couple terrain blockers
+    this.solids = [];
+    for (const b of this.buildings){
+      // give the house a little padding so you can’t clip edges
+      this.solids.push({ x: b.x+6, y: b.y+6, w: b.w-12, h: b.h-12 });
+    }
+    // water is blocked except bridge area
+    // left water collision
+    this.solids.push({ x: 0, y: this.river.y, w: this.bridge.x-10, h: this.river.h });
+    // right water collision
+    this.solids.push({ x: this.bridge.x+this.bridge.w+10, y: this.river.y, w: this.w-(this.bridge.x+this.bridge.w+10), h: this.river.h });
 
-    this.landmarks = [
-      { id:"cottage", x: 340,  y: 350, text:"Cottage",       hint:"Home (soon)" },
-      { id:"market",  x: 920,  y: 340, text:"Corner Market", hint:"Snacks (soon)" },
-      { id:"studio",  x: 1600, y: 390, text:"Acting Studio", hint:"Audition (soon)" },
-      { id:"bridge",  x: this.bridge.x + 70, y: this.bridge.y + 20, text:"Bridge", hint:"Cross" },
-      { id:"culdesac",x: 2040, y: 590, text:"Cul-de-sac",    hint:"Quiet" },
-    ];
+    // keep your raised platform area (nice landmark)
+    this.raised = { x: 1760, y: 120, w: 520, h: 95 };
+    this.solids.push({ x: this.raised.x, y: this.raised.y, w: this.raised.w, h: this.raised.h });
 
     this.stairs = [
       { x: 1760, y: 215, w: 150, h: 40 },
       { x: 860,  y: 620, w: 150, h: 40 },
     ];
 
-    // --- PROPS ---
+    this.landmarks = [
+      { id:"cottage", x: 330,  y: 410, text:"Cottage",       hint:"Home (soon)" },
+      { id:"market",  x: 1010, y: 360, text:"Corner Market", hint:"Snacks (soon)" },
+      { id:"studio",  x: 1660, y: 420, text:"Acting Studio", hint:"Audition (soon)" },
+      { id:"park",    x: this.park.cx, y: this.park.cy, text:"Sunleaf Park", hint:"Breathe" },
+      { id:"bridge",  x: this.bridge.x + 60, y: this.bridge.y - 12, text:"Bridge", hint:"Cross" },
+    ];
+
+    // PROPS: trees/bushes/flowers now placed to support yards + park (not scattered)
     this.props = [];
-    const add = (p) => this.props.push(p);
+    const add = (p)=>this.props.push(p);
     const rng = makeRng(1337);
 
-    addTreeLine(add, rng, 320, 560, 7, 44);
-    addTreeLine(add, rng, 640, 980, 10, 52);
-    addTreeLine(add, rng, 1420, 740, 9, 56);
-    addTreeLine(add, rng, 1700, 980, 8, 52);
+    // Yard props (deterministic per-lot)
+    for (const y of this.yards){
+      // 1–2 trees per yard, back corners
+      if (rng() < 0.85){
+        add({ type:"tree", x: y.x + 28 + rng()*40, y: y.y + y.h - 18, s: 0.95 + rng()*0.25, baseY: y.y + y.h });
+      }
+      if (rng() < 0.45){
+        add({ type:"tree", x: y.x + y.w - (28 + rng()*40), y: y.y + y.h - 18, s: 0.90 + rng()*0.25, baseY: y.y + y.h });
+      }
 
-    addTreeCluster(add, rng, 1960, 520, 4);
-    addTreeCluster(add, rng, 2100, 740, 4);
+      // bushes near porch line
+      const bushes = 2 + Math.floor(rng()*3);
+      for (let i=0;i<bushes;i++){
+        const bx = y.x + 26 + i*(y.w/(bushes+1));
+        const by = y.y + 22 + rng()*10;
+        add({ type:"bush", x: bx, y: by, s: 0.70 + rng()*0.35, baseY: by+2 });
+      }
 
-    addBushStrip(add, rng, 340, 500, 10);
-    addBushStrip(add, rng, 880, 520, 12);
-    addBushStrip(add, rng, 1500, 560, 10);
+      // occasional flowers
+      if (rng() < 0.55){
+        addFlowerPatch(add, rng, y.x + y.w*0.5, y.y + y.h*0.55);
+      }
+    }
 
-    add({ type:"rock", x: 520,  y: 1140, s: 1.0,  baseY: 1140 });
-    add({ type:"rock", x: 1260, y: 1138, s: 1.2,  baseY: 1138 });
-    add({ type:"rock", x: 1780, y: 1144, s: 0.95, baseY: 1144 });
+    // Park props: ring of trees + benches + flower beds
+    addParkDressings(add, rng, this.park);
 
-    addFlowerPatch(add, rng, 980, 680);
-    addFlowerPatch(add, rng, 1560, 920);
+    // A few rocks near river bank
+    add({ type:"rock", x: 520,  y: this.river.y - 10, s: 1.0,  baseY: this.river.y - 10 });
+    add({ type:"rock", x: 1260, y: this.river.y - 8,  s: 1.2,  baseY: this.river.y - 8 });
+    add({ type:"rock", x: 1780, y: this.river.y - 6,  s: 0.95, baseY: this.river.y - 6 });
   }
 
-  getSpawn(role){
-    return this.spawns[role] || this.spawns.actor;
-  }
+  getSpawn(role){ return this.spawns[role] || this.spawns.actor; }
 
   hitsSolid(rect){
     for (const s of this.solids){
@@ -83,16 +110,12 @@ export class World {
       const dx = lm.x - px;
       const dy = lm.y - py;
       const d2 = dx*dx + dy*dy;
-      if (d2 <= bestD2){
-        bestD2 = d2;
-        best = lm;
-      }
+      if (d2 <= bestD2){ bestD2 = d2; best = lm; }
     }
     return best;
   }
 
   draw(ctx, cam){
-    // clear screen
     ctx.fillStyle = "#0b0b12";
     ctx.fillRect(0, 0, cam.vw, cam.vh);
 
@@ -101,27 +124,41 @@ export class World {
     const cy = Math.round(cam.y);
     ctx.translate(-cx, -cy);
 
-    // --- WORLD BASE ---
+    // base ground
     drawGround(ctx, 0, 0, this.w, this.h);
 
-    // --- ROADS ---
+    // park base (big soft field)
+    drawPark(ctx, this.park);
+
+    // roads
     drawRoads(ctx, this.roads);
 
-    // --- RAISED / STAIRS ---
-    drawRaised(ctx, 1760, 120, 520, 95);
-    for (const s of this.stairs) drawStairs(ctx, s.x, s.y, s.w, s.h);
+    // water + bank (NOW VISIBLE)
+    drawWaterStatic(ctx, this.river.x, this.river.y, this.river.w, this.river.h);
 
-    // --- BRIDGE ---
+    // bridge above water
     drawBridge(ctx, this.bridge.x, this.bridge.y, this.bridge.w, this.bridge.h);
 
-    // --- LANDMARK TEXT ---
-    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-    ctx.fillStyle = "rgba(18,10,6,.70)";
-    for (const lm of this.landmarks){
-      ctx.fillText(lm.text, lm.x, lm.y);
+    // raised + stairs
+    drawRaised(ctx, this.raised.x, this.raised.y, this.raised.w, this.raised.h);
+    for (const s of this.stairs) drawStairs(ctx, s.x, s.y, s.w, s.h);
+
+    // yards (visual lawns, driveways)
+    for (const y of this.yards) drawYard(ctx, y);
+
+    // buildings (NOW VISIBLE)
+    for (const b of this.buildings){
+      if (b.kind === "house") drawHouseBlock(ctx, b.x, b.y, b.w, b.h, b.accent || 0);
+      if (b.kind === "market") drawMarketBlock(ctx, b.x, b.y, b.w, b.h);
+      if (b.kind === "studio") drawStudioBlock(ctx, b.x, b.y, b.w, b.h);
     }
 
-    // --- PROPS (depth-sorted) ---
+    // landmark labels
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+    ctx.fillStyle = "rgba(18,10,6,.72)";
+    for (const lm of this.landmarks) ctx.fillText(lm.text, lm.x, lm.y);
+
+    // props depth sorted
     const propsSorted = [...this.props].sort((a,b)=>(a.baseY||a.y)-(b.baseY||b.y));
     for (const pr of propsSorted){
       if (pr.type === "tree"){
@@ -133,6 +170,8 @@ export class World {
         drawBush(ctx, pr.x, pr.y, pr.s);
       } else if (pr.type === "flower"){
         drawFlower(ctx, pr.x, pr.y, pr.s, pr.c || 0);
+      } else if (pr.type === "bench"){
+        drawBench(ctx, pr.x, pr.y, pr.s || 1);
       }
     }
 
@@ -142,13 +181,221 @@ export class World {
   drawAbove(){ /* intentionally empty */ }
 }
 
-/* ===================== Drawing ===================== */
+/* ===================== Suburb Layout ===================== */
+
+function buildSuburbRoads(W, H, bridge){
+  const asphalt = [];
+  const sidewalk = [];
+  const marks = [];
+  const driveways = [];
+
+  // Main horizontal boulevard through neighborhood
+  sidewalk.push({ x: 80,  y: 720, w: 2080, h: 200, r: 28 });
+  asphalt.push ({ x: 95,  y: 735, w: 2050, h: 170, r: 26 });
+
+  // Vertical connector (to market/studio)
+  sidewalk.push({ x: 980, y: 260, w: 200, h: 720, r: 28 });
+  asphalt.push ({ x: 995, y: 275, w: 170, h: 690, r: 26 });
+
+  // Cul-de-sac
+  sidewalk.push({ x: 1850, y: 480, w: 520, h: 360, r: 100 });
+  asphalt.push ({ x: 1865, y: 495, w: 490, h: 330, r: 96 });
+
+  // Park loop path (lighter “trail”)
+  sidewalk.push({ x: 320, y: 260, w: 560, h: 360, r: 40 });
+  asphalt.push ({ x: 340, y: 280, w: 520, h: 320, r: 36 });
+
+  // Bridge approach road
+  sidewalk.push({ x: bridge.x - 220, y: bridge.y + 6, w: bridge.w + 440, h: 120, r: 28 });
+  asphalt.push ({ x: bridge.x - 205, y: bridge.y + 20, w: bridge.w + 410, h: 92,  r: 24 });
+
+  // lane marks
+  for (let i=0;i<26;i++) marks.push({ x: 160 + i*70, y: 820, w: 32, h: 4 });
+  for (let i=0;i<9;i++)  marks.push({ x: 1065, y: 320 + i*64, w: 4, h: 28 });
+
+  // Driveways aligned to house rows (created in buildSuburbLots too)
+  // (keep empty here; we fill as yards are made)
+  return { asphalt, sidewalk, marks, driveways };
+}
+
+function buildPark(){
+  // Central-left park
+  return {
+    x: 220, y: 220, w: 760, h: 460,
+    cx: 520, cy: 450,
+  };
+}
+
+function buildSuburbLots({ addBuilding, addYard, rng }){
+  // Two rows of houses above the main road
+  const rowA = { x0: 140, y0: 420, count: 6, lotW: 260, lotH: 240, gap: 18 };
+  // Two rows below the main road
+  const rowB = { x0: 140, y0: 980, count: 6, lotW: 260, lotH: 240, gap: 18 };
+
+  const placeRow = (row, flip=false) => {
+    for (let i=0;i<row.count;i++){
+      const lotX = row.x0 + i*(row.lotW + row.gap);
+      const lotY = row.y0;
+
+      // yard (front lawn)
+      const yard = { x: lotX+10, y: lotY+10, w: row.lotW-20, h: row.lotH-20 };
+      addYard(yard);
+
+      // house sits toward the “back” of the lot relative to road
+      const houseW = 170 + Math.floor(rng()*26);
+      const houseH = 110 + Math.floor(rng()*18);
+      const hx = lotX + (row.lotW - houseW)/2;
+      const hy = flip
+        ? (lotY + 40)               // if below road, house higher in lot
+        : (lotY + row.lotH - houseH - 34);
+
+      addBuilding({
+        kind:"house",
+        x: Math.round(hx),
+        y: Math.round(hy),
+        w: houseW,
+        h: houseH,
+        accent: (i + (flip?3:0)) % 3
+      });
+
+      // driveway: from road edge into lot
+      // (we store visually via yard draw; if you want them in roads.driveways, add there too)
+      yard.drive = {
+        x: lotX + 26 + Math.floor(rng()*40),
+        y: flip ? (lotY + row.lotH - 14) : (lotY + 6),
+        w: 56,
+        h: 90
+      };
+
+      // walkway
+      yard.walk = {
+        x: hx + houseW*0.5 - 8,
+        y: flip ? (hy + houseH) : (hy - 48),
+        w: 16,
+        h: 56
+      };
+    }
+  };
+
+  placeRow(rowA, false);
+  placeRow(rowB, true);
+
+  // Corner market near the vertical connector
+  addBuilding({ kind:"market", x: 910, y: 300, w: 260, h: 170 });
+
+  // Studio on the right side
+  addBuilding({ kind:"studio", x: 1540, y: 340, w: 320, h: 190 });
+
+  // A couple “cottage” style houses near park edge
+  addBuilding({ kind:"house", x: 180, y: 310, w: 200, h: 120, accent: 1 });
+  addBuilding({ kind:"house", x: 420, y: 300, w: 210, h: 124, accent: 2 });
+}
+
+/* ===================== Visual Blocks ===================== */
+
+function drawYard(ctx, y){
+  // lawn
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#55733a";
+  roundRect(ctx, y.x, y.y, y.w, y.h, 18, true);
+
+  // lawn grain
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  for (let i=0;i<420;i++){
+    const px = y.x + ((i*19) % y.w);
+    const py = y.y + ((i*41) % y.h);
+    if (i % 4 === 0) ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  // driveway
+  if (y.drive){
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#a8a294";
+    roundRect(ctx, y.drive.x, y.drive.y, y.drive.w, y.drive.h, 10, true);
+    ctx.globalAlpha = 1;
+  }
+
+  // walkway
+  if (y.walk){
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = "#d3c8b5";
+    roundRect(ctx, y.walk.x, y.walk.y, y.walk.w, y.walk.h, 8, true);
+    ctx.globalAlpha = 1;
+  }
+
+  // subtle fence line at back
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  roundRect(ctx, y.x+10, y.y+y.h-18, y.w-20, 8, 6, true);
+  ctx.globalAlpha = 1;
+}
+
+function drawPark(ctx, p){
+  // park grass
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#4f6f39";
+  roundRect(ctx, p.x, p.y, p.w, p.h, 34, true);
+
+  // park path loop (light tan)
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = "#d8c6a2";
+  roundRect(ctx, p.x+80, p.y+90, p.w-160, p.h-180, 30, true);
+  ctx.globalAlpha = 1;
+
+  // inner grass
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#4a6a35";
+  roundRect(ctx, p.x+110, p.y+120, p.w-220, p.h-240, 26, true);
+  ctx.globalAlpha = 1;
+}
+
+function addParkDressings(add, rng, p){
+  // tree ring
+  const points = 18;
+  for (let i=0;i<points;i++){
+    const t = i/points * Math.PI*2;
+    const x = p.cx + Math.cos(t)*320 + (rng()*30-15);
+    const y = p.cy + Math.sin(t)*180 + (rng()*30-15);
+    add({ type:"tree", x, y, s: 1.05 + rng()*0.25, baseY: y+2 });
+  }
+
+  // benches
+  add({ type:"bench", x: p.cx-180, y: p.cy+10, s: 1, baseY: p.cy+12 });
+  add({ type:"bench", x: p.cx+180, y: p.cy-30, s: 1, baseY: p.cy-28 });
+
+  // flower beds near corners
+  addFlowerPatch(add, rng, p.x+140, p.y+140);
+  addFlowerPatch(add, rng, p.x+p.w-140, p.y+140);
+  addFlowerPatch(add, rng, p.x+140, p.y+p.h-140);
+  addFlowerPatch(add, rng, p.x+p.w-140, p.y+p.h-140);
+}
+
+function drawBench(ctx, x, y, s){
+  const w = 46*s, h = 10*s;
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "#5a3a24";
+  roundRect(ctx, x-w/2, y-h, w, h, 6, true);
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(x-w/2+6, y-h+3, w-12, 2);
+  ctx.globalAlpha = 1;
+
+  // legs
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#3d2416";
+  ctx.fillRect(x-w/2+6, y-h+8, 4, 10*s);
+  ctx.fillRect(x+w/2-10, y-h+8, 4, 10*s);
+  ctx.globalAlpha = 1;
+}
+
+/* ===================== Core Drawing (yours, upgraded) ===================== */
 
 function drawGround(ctx, x, y, w, h){
   ctx.fillStyle = "#5a6d34";
   ctx.fillRect(x, y, w, h);
 
-  // Micro-noise (stable)
   ctx.globalAlpha = 0.10;
   ctx.fillStyle = "#000";
   for (let i=0; i<5200; i++){
@@ -158,7 +405,6 @@ function drawGround(ctx, x, y, w, h){
   }
   ctx.globalAlpha = 1;
 
-  // Straw flecks
   ctx.globalAlpha = 0.08;
   ctx.fillStyle = "#c7b07a";
   for (let i=0; i<1400; i++){
@@ -168,7 +414,6 @@ function drawGround(ctx, x, y, w, h){
   }
   ctx.globalAlpha = 1;
 
-  // Worn ovals
   ctx.globalAlpha = 0.10;
   ctx.fillStyle = "#6a8040";
   for (let i=0; i<40; i++){
@@ -182,12 +427,10 @@ function drawGround(ctx, x, y, w, h){
 }
 
 function drawRoads(ctx, roads){
-  // Asphalt
   for (const r of roads.asphalt){
     ctx.fillStyle = "#25252c";
     roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, true);
 
-    // speckle
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = "#000";
     for (let i=0; i<900; i++){
@@ -197,21 +440,18 @@ function drawRoads(ctx, roads){
     }
     ctx.globalAlpha = 1;
 
-    // edge grime
     ctx.globalAlpha = 0.28;
     ctx.strokeStyle = "rgba(0,0,0,.55)";
     ctx.lineWidth = 7;
     roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, false);
     ctx.globalAlpha = 1;
 
-    // highlight strip
     ctx.globalAlpha = 0.07;
     ctx.fillStyle = "#fff";
     roundRect(ctx, r.x+8, r.y+10, r.w-16, 10, 8, true);
     ctx.globalAlpha = 1;
   }
 
-  // Sidewalk
   for (const s of roads.sidewalk){
     ctx.fillStyle = "#bfb9a8";
     roundRect(ctx, s.x, s.y, s.w, s.h, s.r || 14, true);
@@ -224,21 +464,41 @@ function drawRoads(ctx, roads){
     ctx.globalAlpha = 1;
   }
 
-  // Lane marks
   ctx.globalAlpha = 0.35;
   ctx.fillStyle = "#efe8d6";
-  for (const m of roads.marks){
-    ctx.fillRect(m.x, m.y, m.w, m.h);
+  for (const m of roads.marks) ctx.fillRect(m.x, m.y, m.w, m.h);
+  ctx.globalAlpha = 1;
+}
+
+function drawWaterStatic(ctx, x,y,w,h){
+  ctx.fillStyle = "#1d6b66";
+  ctx.fillRect(x,y,w,h);
+
+  // ripples
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = "#2a7c76";
+  for (let i=0; i<160; i++){
+    const px = x + ((i*97) % w);
+    const py = y + 20 + ((i*43) % (h-40));
+    ctx.fillRect(px, py, 80, 2);
   }
   ctx.globalAlpha = 1;
 
-  // Driveways
-  ctx.globalAlpha = 0.95;
-  ctx.fillStyle = "#a8a294";
-  for (const d of roads.driveways){
-    roundRect(ctx, d.x, d.y, d.w, d.h, 10, true);
+  // highlights
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#fff";
+  for (let i=0; i<110; i++){
+    const px = x + ((i*123) % w);
+    const py = y + 10 + ((i*19) % 16);
+    ctx.beginPath();
+    ctx.ellipse(px, py, 14, 4, 0.10, 0, Math.PI*2);
+    ctx.fill();
   }
   ctx.globalAlpha = 1;
+
+  // dark bank edge
+  ctx.fillStyle = "rgba(40,28,16,.28)";
+  ctx.fillRect(x, y-10, w, 10);
 }
 
 function drawBridge(ctx, x,y,w,h){
@@ -255,6 +515,103 @@ function drawBridge(ctx, x,y,w,h){
   ctx.fillStyle = "rgba(255,255,255,.08)";
   ctx.fillRect(x+12, y+10, w-24, 4);
   ctx.fillRect(x+12, y+h-14, w-24, 4);
+}
+
+function drawHouseBlock(ctx, x,y,w,h, accentIndex=0){
+  // warm stucco
+  ctx.fillStyle = "#c3ad84";
+  roundRect(ctx, x, y, w, h, 14, true);
+
+  // stucco grain
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  for (let i=0; i<900; i++){
+    const px = x + ((i*23) % w);
+    const py = y + ((i*67) % h);
+    if ((i % 4) === 0) ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  // roof band
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  roundRect(ctx, x+8, y+8, w-16, 20, 10, true);
+
+  // windows
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = "#16161d";
+  for (let i=0; i<6; i++){
+    const wx = x + 26 + (i%3)*(w/3);
+    const wy = y + 44 + Math.floor(i/3)*52;
+    roundRect(ctx, wx, wy, 38, 28, 6, true);
+  }
+  ctx.globalAlpha = 1;
+
+  // door
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = "#1a1412";
+  roundRect(ctx, x+w*0.5-14, y+h-44, 28, 34, 6, true);
+  ctx.globalAlpha = 1;
+
+  // grime base
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#000";
+  roundRect(ctx, x+6, y+h-18, w-12, 12, 8, true);
+  ctx.globalAlpha = 1;
+
+  // subtle violet accent strip
+  const accents = [
+    "rgba(138,46,255,.05)",
+    "rgba(138,46,255,.07)",
+    "rgba(138,46,255,.09)",
+  ];
+  ctx.fillStyle = accents[accentIndex % accents.length];
+  ctx.fillRect(x, y, w, 10);
+}
+
+function drawMarketBlock(ctx, x,y,w,h){
+  ctx.fillStyle = "#b9b2a2";
+  roundRect(ctx, x, y, w, h, 16, true);
+
+  // awning
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "rgba(138,46,255,.18)";
+  roundRect(ctx, x+10, y+40, w-20, 28, 10, true);
+  ctx.globalAlpha = 1;
+
+  // big windows
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#111118";
+  roundRect(ctx, x+22, y+78, w-44, h-110, 10, true);
+  ctx.globalAlpha = 1;
+
+  // sign
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  roundRect(ctx, x+20, y+12, w-40, 20, 10, true);
+  ctx.globalAlpha = 1;
+}
+
+function drawStudioBlock(ctx, x,y,w,h){
+  ctx.fillStyle = "#cbbd9c";
+  roundRect(ctx, x, y, w, h, 18, true);
+
+  // facade panels
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = "#000";
+  for (let i=0;i<8;i++){
+    ctx.fillRect(x+18 + i*((w-36)/8), y+18, 1, h-36);
+  }
+  ctx.globalAlpha = 1;
+
+  // stage door
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = "#14131a";
+  roundRect(ctx, x+w*0.5-22, y+h-52, 44, 42, 10, true);
+  ctx.globalAlpha = 1;
+
+  // violet marquee line
+  ctx.fillStyle = "rgba(138,46,255,.08)";
+  ctx.fillRect(x, y+10, w, 8);
 }
 
 function drawRaised(ctx, x,y,w,h){
@@ -303,7 +660,6 @@ function drawTreeTrunk(ctx, x, y, s){
 
 function drawTreeCanopy(ctx, x, y, s){
   s *= 0.80;
-
   const topY  = y - 46*s;
   const midY  = y - 30*s;
   const baseY = y - 16*s;
@@ -378,85 +734,15 @@ function drawFlower(ctx, x,y,s,cIndex){
   ctx.globalAlpha = 1;
 }
 
-/* ===================== Layout Builders ===================== */
-
-function buildRoads(){
-  const asphalt = [];
-  const sidewalk = [];
-  const marks = [];
-  const driveways = [];
-
-  asphalt.push({ x: 120, y: 740, w: 1900, h: 160, r: 24 });
-  sidewalk.push({ x: 110, y: 730, w: 1920, h: 180, r: 26 });
-
-  asphalt.push({ x: 920, y: 360, w: 160, h: 560, r: 24 });
-  sidewalk.push({ x: 910, y: 350, w: 180, h: 580, r: 26 });
-
-  asphalt.push({ x: 760, y: 470, w: 320, h: 140, r: 22 });
-  sidewalk.push({ x: 750, y: 460, w: 340, h: 160, r: 24 });
-
-  asphalt.push({ x: 1840, y: 520, w: 520, h: 320, r: 90 });
-  sidewalk.push({ x: 1830, y: 510, w: 540, h: 340, r: 96 });
-
-  for (let i=0;i<26;i++) marks.push({ x: 160 + i*70, y: 818, w: 32, h: 4 });
-  for (let i=0;i<9;i++)  marks.push({ x: 998, y: 390 + i*60, w: 4, h: 28 });
-
-  driveways.push({ x: 330,  y: 630, w: 70, h: 110 });
-  driveways.push({ x: 520,  y: 630, w: 70, h: 110 });
-  driveways.push({ x: 900,  y: 630, w: 70, h: 110 });
-  driveways.push({ x: 1520, y: 630, w: 70, h: 110 });
-  driveways.push({ x: 1960, y: 840, w: 70, h: 110 });
-
-  return { asphalt, sidewalk, marks, driveways };
-}
-
-function addTreeLine(add, rng, x, y, count, step){
-  for (let i=0;i<count;i++){
-    const yy = y + (rng()*26-13);
-    add({
-      type:"tree",
-      x: x + i*step + (rng()*18-9),
-      y: yy,
-      s: 0.85 + rng()*0.35,
-      baseY: yy + 2
-    });
-  }
-}
-
-function addTreeCluster(add, rng, x, y, count){
-  for (let i=0;i<count;i++){
-    const yy = y + (rng()*90-45);
-    add({
-      type:"tree",
-      x: x + (rng()*120-60),
-      y: yy,
-      s: 0.9 + rng()*0.4,
-      baseY: yy + 2
-    });
-  }
-}
-
-function addBushStrip(add, rng, x, y, count){
-  for (let i=0;i<count;i++){
-    const yy = y + (rng()*10-5);
-    add({
-      type:"bush",
-      x: x + i*34 + (rng()*10-5),
-      y: yy,
-      s: 0.75 + rng()*0.35,
-      baseY: yy + 2
-    });
-  }
-}
-
 function addFlowerPatch(add, rng, x, y){
-  for (let i=0;i<18;i++){
+  for (let i=0;i<14;i++){
+    const yy = y + (rng()*60-30);
     add({
       type:"flower",
       x: x + (rng()*110-55),
-      y: y + (rng()*60-30),
+      y: yy,
       s: 0.8 + rng()*0.6,
-      baseY: y + 8,
+      baseY: yy + 8,
       c: Math.floor(rng()*3)
     });
   }
