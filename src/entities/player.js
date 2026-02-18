@@ -207,4 +207,73 @@ export class Player {
     ctx.restore();
     stroke(sx+(6+sway)*px, y+10*px, 6*px, 7*px);
 
-    // ==
+    // ===== arms =====
+    const punching = p.punchT > 0;
+    if (!punching){
+      // left arm
+      fill(sx+(4+armAx)*px,  y+(11+armAy)*px, 2*px, 5*px, coat);
+      stroke(sx+(4+armAx)*px,y+(11+armAy)*px, 2*px, 5*px);
+      // right arm
+      fill(sx+(12+armBx)*px,  y+(11+armBy)*px, 2*px, 5*px, coat);
+      stroke(sx+(12+armBx)*px,y+(11+armBy)*px, 2*px, 5*px);
+    } else {
+      this._drawPunchArms(ctx, sx, y, px, coat, outline, face);
+      this._drawPunchSpark(ctx, p, face);
+    }
+
+    // ===== feet =====
+    // feet positions stay mostly stable, with stride offsets applied
+    // left foot (A)
+    fill(sx+(7+legAx)*px,  y+(17)*px, 2*px, 2*px, sock);
+    fill(sx+(7+legAx)*px,  y+(19+legAy)*px, 2*px, 3*px, boot);
+    stroke(sx+(7+legAx)*px,y+(19+legAy)*px, 2*px, 3*px);
+
+    // right foot (B)
+    fill(sx+(10+legBx)*px, y+(17)*px, 2*px, 2*px, sock);
+    fill(sx+(10+legBx)*px, y+(19+legBy)*px, 2*px, 3*px, boot);
+    stroke(sx+(10+legBx)*px,y+(19+legBy)*px, 2*px, 3*px);
+  }
+
+  _faceDir(fx, fy){
+    if (Math.abs(fx) > Math.abs(fy)) return fx >= 0 ? "E" : "W";
+    return fy >= 0 ? "S" : "N";
+  }
+
+  _drawPunchArms(ctx, sx, y, px, coat, outline, face){
+    const fill = (x1,y1,w,h,c)=>{ ctx.fillStyle=c; ctx.fillRect(x1,y1,w,h); };
+    const stroke = (x1,y1,w,h)=>{ ctx.strokeStyle=outline; ctx.lineWidth=2; ctx.strokeRect(x1,y1,w,h); };
+
+    let lx = sx + 4*px,  ly = y + 11*px;
+    let rx = sx + 12*px, ry = y + 11*px;
+
+    if (face === "E") rx += 2*px;
+    if (face === "W") lx -= 2*px;
+    if (face === "N") { ly -= 2*px; ry -= 2*px; }
+    if (face === "S") { ly += 1*px; ry += 1*px; }
+
+    fill(lx, ly, 2*px, 5*px, coat);
+    fill(rx, ry, 2*px, 5*px, coat);
+    stroke(lx, ly, 2*px, 5*px);
+    stroke(rx, ry, 2*px, 5*px);
+  }
+
+  _drawPunchSpark(ctx, p, face){
+    const cx = p.x + p.w/2;
+    const cy = p.y + p.h/2 - (p.z || 0);
+
+    let ox = 0, oy = 0;
+    if (face === "E") ox = 16;
+    if (face === "W") ox = -16;
+    if (face === "N") oy = -16;
+    if (face === "S") oy = 16;
+
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = "rgba(255,255,255,.8)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx + ox, cy + oy, 8, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
