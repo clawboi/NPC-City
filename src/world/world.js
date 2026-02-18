@@ -101,16 +101,43 @@ export class World {
     const cy = Math.round(cam.y);
     ctx.translate(-cx, -cy);
 
-    drawGround(ctx, 0, 0, this.w, this.h);
-    drawRoadSystem(ctx, this.roads);
-    drawWaterStatic(ctx, 0, 1210, this.w, 290);
-    drawBridge(ctx, this.bridge.x, this.bridge.y, this.bridge.w, this.bridge.h);
+    function drawGround(ctx, x, y, w, h){
+  // Base: warmer, less neon
+  ctx.fillStyle = "#5a6d34"; // olive, slightly muted
+  ctx.fillRect(x, y, w, h);
 
-    for (const b of this.solids){
-      if (b.y >= 1210) continue;
-      if (b.y === 120 && b.h === 95) continue;
-      drawHouseBlock(ctx, b.x, b.y, b.w, b.h);
-    }
+  // Micro-noise (stable, not random)
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  for (let i=0; i<5200; i++){
+    const px = (i*37) % w;
+    const py = (i*91) % h;
+    ctx.fillRect(x + px, y + py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  // Straw + worn patches (warm tan flecks)
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = "#c7b07a";
+  for (let i=0; i<1400; i++){
+    const px = (i*53) % w;
+    const py = (i*131) % h;
+    if ((i % 7) === 0) ctx.fillRect(x + px, y + py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  // Larger worn ovals (few)
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#6a8040";
+  for (let i=0; i<40; i++){
+    const px = x + ((i*173) % w);
+    const py = y + ((i*269) % h);
+    ctx.beginPath();
+    ctx.ellipse(px, py, 70, 45, 0.10, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
 
     drawRaised(ctx, 1760, 120, 520, 95);
 
@@ -174,8 +201,34 @@ function drawGround(ctx, x, y, w, h){
   ctx.globalAlpha = 1;
 }
 
-function drawRoadSystem(ctx, roads){
-  for (const r of roads.asphalt){
+for (const r of roads.asphalt){
+  // Asphalt base
+  ctx.fillStyle = "#25252c";
+  roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, true);
+
+  // Asphalt speckle (stable)
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = "#000";
+  for (let i=0; i<900; i++){
+    const px = r.x + ((i*29) % r.w);
+    const py = r.y + ((i*71) % r.h);
+    if ((i % 3) === 0) ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  // Soft edge grime
+  ctx.globalAlpha = 0.28;
+  ctx.strokeStyle = "rgba(0,0,0,.55)";
+  ctx.lineWidth = 7;
+  roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, false);
+  ctx.globalAlpha = 1;
+
+  // Slight highlight strip (gives “street sheen” without electricity)
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = "#fff";
+  roundRect(ctx, r.x+8, r.y+10, r.w-16, 10, 8, true);
+  ctx.globalAlpha = 1;
+}
     ctx.fillStyle = "#2a2a32";
     roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, true);
 
@@ -258,19 +311,44 @@ function drawBridge(ctx, x,y,w,h){
 }
 
 function drawHouseBlock(ctx, x,y,w,h){
-  ctx.fillStyle = "#c8b28a";
+  // stucco base
+  ctx.fillStyle = "#c3ad84";
   roundRect(ctx, x, y, w, h, 14, true);
 
-  ctx.fillStyle = "rgba(0,0,0,.14)";
-  roundRect(ctx, x+8, y+8, w-16, 18, 10, true);
+  // stucco grain (stable speckle)
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  for (let i=0; i<900; i++){
+    const px = x + ((i*23) % w);
+    const py = y + ((i*67) % h);
+    if ((i % 4) === 0) ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
 
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = "#1d1d25";
+  // roof band
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  roundRect(ctx, x+8, y+8, w-16, 20, 10, true);
+
+  // windows
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#16161d";
   for (let i=0; i<6; i++){
     const wx = x + 40 + (i%3)*(w/3) + (i*7)%18;
     const wy = y + 60 + Math.floor(i/3)*80 + (i*11)%10;
     roundRect(ctx, wx, wy, 44, 32, 6, true);
   }
+  ctx.globalAlpha = 1;
+
+  // grime at bottom edge (grounds the building)
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#000";
+  roundRect(ctx, x+6, y+h-18, w-12, 12, 8, true);
+  ctx.globalAlpha = 1;
+
+  // subtle violet accent
+  ctx.fillStyle = "rgba(138,46,255,.06)";
+  ctx.fillRect(x, y, w, 10);
+}
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = "rgba(138,46,255,.07)";
@@ -376,15 +454,17 @@ function drawRock(ctx, x,y,s){
 }
 
 function drawBush(ctx, x,y,s){
-  ctx.fillStyle = "#2f4e22";
-  blob(ctx, x+14*s, y+3*s, 20*s, 12*s, 0.12);
-
-  ctx.fillStyle = "#3a5b2a";
+  // warmer shrub palette (leans dusty, not leafy tree)
+  ctx.fillStyle = "#4a5b2f";
   blob(ctx, x, y, 26*s, 16*s, 0.08);
 
-  ctx.fillStyle = "#476b33";
+  ctx.fillStyle = "#3b4b26";
+  blob(ctx, x+14*s, y+3*s, 20*s, 12*s, 0.12);
+
+  ctx.fillStyle = "#566b36";
   blob(ctx, x-12*s, y+2*s, 22*s, 14*s, -0.06);
 
+  // outline
   ctx.globalAlpha = 0.25;
   ctx.strokeStyle = "rgba(18,10,6,.30)";
   ctx.lineWidth = 2;
