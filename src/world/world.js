@@ -1,87 +1,73 @@
-// NPC City — World (Sandbox v3: NO-COLLISION, Simple Walkthrough)
+// NPC City — World (Suburban v4: Clean, No Overlap, Walk Around, No Clipping)
 // Drop-in replacement for world.js ONLY.
 //
-// What this is:
-// - Ultra-simple layout: a few houses + 2 buildings + a tiny plaza + one road loop.
-// - NO movement restrictions: hitsSolid() always returns false and solids are empty.
-// - Still keeps landmarks + props for UI hints.
-// - Deterministic and fast.
+// What you asked for (implemented):
+// - More suburban look (clean blocks, cul-de-sac, lawns, driveways, sidewalks).
+// - NOTHING overlaps (lots are spaced and buildings sit inside yards).
+// - You can walk THROUGH the map freely, but NOT through buildings (collision = buildings only).
+// - Map extends across the full world (uses the whole W x H).
+// - Keeps same World API: getSpawn(), hitsSolid(), nearestLandmark(), draw(), drawAbove().
+//
+// If your engine uses different prop draw helpers, this file is self-contained and safe.
 
 export class World {
   constructor(){
-    this.w = 2000;
-    this.h = 1200;
+    this.w = 2600;
+    this.h = 1600;
 
-    // Spawn everyone near the "main loop"
+    // Spawns on a sidewalk near the center spine
     this.spawns = {
-      actor:  { x: 320, y: 620, area:"Sunleaf Sandbox" },
-      thug:   { x: 380, y: 620, area:"Sunleaf Sandbox" },
-      police: { x: 440, y: 620, area:"Sunleaf Sandbox" },
+      actor:  { x: 360, y: 820, area:"Sunleaf Suburbs" },
+      thug:   { x: 420, y: 820, area:"Sunleaf Suburbs" },
+      police: { x: 480, y: 820, area:"Sunleaf Suburbs" },
     };
 
-    // Geometry containers (engine expects these)
     this.buildings = [];
     this.yards = [];
     this.props = [];
-    this.solids = []; // intentionally empty
+    this.solids = [];
 
-    // Tiny "district" labels (for future)
-    this.districts = [
-      { id:"sandbox", name:"Sunleaf Sandbox", x: 0, y: 0, w: this.w, h: this.h }
-    ];
+    const rng = makeRng(4444);
 
-    // Simple road loop (purely visual)
-    this.roads = buildRoadLoop();
+    // Roads: a simple suburb you can read at a glance
+    this.roads = buildSuburbanRoads(this.w, this.h);
 
-    // A few buildings, spaced wide so you can walk around everything
-    // Houses (left neighborhood)
-    this.buildings.push(
-      house(220, 360, 190, 120, 0, 0),
-      house(480, 360, 190, 120, 1, 1),
-      house(220, 560, 190, 120, 2, 2),
-      house(480, 560, 190, 120, 0, 1),
-    );
+    // Lots + buildings, intentionally spaced to avoid overlap
+    buildSuburbanLots({
+      rng,
+      W: this.w,
+      H: this.h,
+      roads: this.roads,
+      addBuilding: (b)=>this.buildings.push(b),
+      addYard: (y)=>this.yards.push(y),
+      addProp: (p)=>this.props.push(p),
+      addDriveway: (d)=>this.roads.driveways.push(d),
+    });
 
-    // Market + Studio (right side)
-    this.buildings.push(
-      { kind:"market", x: 1320, y: 360, w: 280, h: 180 },
-      { kind:"studio", x: 1280, y: 620, w: 360, h: 200 },
-    );
-
-    // Plaza pad (center top)
-    this.buildings.push(
-      { kind:"plaza", x: 760, y: 220, w: 420, h: 190 }
-    );
-
-    // Lawns/yards (simple patches)
-    const yards = [
-      { x: 180, y: 320, w: 270, h: 190 },
-      { x: 440, y: 320, w: 270, h: 190 },
-      { x: 180, y: 520, w: 270, h: 190 },
-      { x: 440, y: 520, w: 270, h: 190 },
-      { x: 1240, y: 320, w: 420, h: 250, style:"tight" },
-      { x: 1220, y: 590, w: 460, h: 270, style:"tight" },
-      { x: 720, y: 190, w: 500, h: 260, style:"plaza" },
-    ];
-    this.yards.push(...yards);
+    // Collisions: ONLY buildings (no more "walking over houses")
+    // We inset slightly so the player can brush past walls smoothly.
+    for (const b of this.buildings){
+      this.solids.push({ x: b.x+8, y: b.y+8, w: b.w-16, h: b.h-16 });
+    }
 
     // Landmarks for UI hints
     this.landmarks = [
-      { id:"homes",   x: 300,  y: 310, text:"Houses",        hint:"Neighborhood" },
-      { id:"market",  x: 1360, y: 340, text:"Corner Market", hint:"Snacks (soon)" },
-      { id:"studio",  x: 1360, y: 610, text:"Acting Studio", hint:"Audition (soon)" },
-      { id:"plaza",   x: 860,  y: 210, text:"Plaza",         hint:"Meetups (soon)" },
-      { id:"loop",    x: 980,  y: 520, text:"Main Loop",     hint:"Cruise" },
+      { id:"homes",    x: 360,  y: 610,  text:"Neighborhood", hint:"Houses" },
+      { id:"market",   x: 520,  y: 320,  text:"Corner Market", hint:"Snacks (soon)" },
+      { id:"park",     x: 1420, y: 520,  text:"Sunleaf Park",  hint:"Breathe" },
+      { id:"studio",   x: 2140, y: 760,  text:"Acting Studio", hint:"Audition (soon)" },
+      { id:"culdesac", x: 2320, y: 1130, text:"Cul-de-sac",    hint:"Quiet" },
     ];
-
-    // Props: a few trees/lamps/benches so it doesn't feel empty
-    addPropsSimple(this.props);
   }
 
   getSpawn(role){ return this.spawns[role] || this.spawns.actor; }
 
-  // NO RESTRICTIONS: always allow movement
-  hitsSolid(_rect){ return false; }
+  hitsSolid(rect){
+    for (const s of this.solids){
+      if (aabb(rect, s)) return true;
+    }
+    return false;
+  }
 
   nearestLandmark(px, py, radius = 64){
     let best = null;
@@ -100,25 +86,26 @@ export class World {
     ctx.fillRect(0, 0, cam.vw, cam.vh);
 
     ctx.save();
-    const cx = Math.round(cam.x);
-    const cy = Math.round(cam.y);
-    ctx.translate(-cx, -cy);
+    ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
 
     // Ground
     drawGround(ctx, 0, 0, this.w, this.h);
 
-    // Lawns first
-    for (const y of this.yards) drawYard(ctx, y);
+    // Lawns first (no overlap with roads since roads draw on top)
+    for (const y of this.yards) drawYardLawn(ctx, y);
 
-    // Roads
-    drawRoadLoopVisual(ctx, this.roads);
+    // Roads on top of grass
+    drawRoads(ctx, this.roads);
+
+    // Yard details (driveways/walks) after roads so they read clean
+    for (const y of this.yards) drawYardDetails(ctx, y);
 
     // Buildings
     for (const b of this.buildings){
       if (b.kind === "house")  drawHouse(ctx, b);
       if (b.kind === "market") drawMarket(ctx, b);
       if (b.kind === "studio") drawStudio(ctx, b);
-      if (b.kind === "plaza")  drawPlaza(ctx, b);
+      if (b.kind === "park")   drawParkBlock(ctx, b);
     }
 
     // Labels
@@ -126,13 +113,15 @@ export class World {
     ctx.fillStyle = "rgba(0,0,0,.45)";
     for (const lm of this.landmarks) ctx.fillText(lm.text, lm.x, lm.y);
 
-    // Props depth sort
+    // Props depth sort (so trees feel grounded)
     const propsSorted = [...this.props].sort((a,b)=>(a.baseY||a.y)-(b.baseY||b.y));
     for (const pr of propsSorted){
-      if (pr.type === "tree")   drawTree(ctx, pr.x, pr.y, pr.s||1);
-      if (pr.type === "lamp")   drawLamp(ctx, pr.x, pr.y, pr.s||1);
-      if (pr.type === "bench")  drawBench(ctx, pr.x, pr.y, pr.s||1);
-      if (pr.type === "mailbox")drawMailbox(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "tree")    drawTree(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "lamp")    drawLamp(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "bench")   drawBench(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "mailbox") drawMailbox(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "bush")    drawBush(ctx, pr.x, pr.y, pr.s||1);
+      if (pr.type === "flower")  drawFlower(ctx, pr.x, pr.y, pr.s||1, pr.c||0);
     }
 
     ctx.restore();
@@ -141,56 +130,180 @@ export class World {
   drawAbove(){ /* intentionally empty */ }
 }
 
-/* ===================== Layout ===================== */
+/* ===================== Roads (suburban grid) ===================== */
 
-function buildRoadLoop(){
-  // single loop road (visual only)
-  return {
-    loop: { x: 120, y: 260, w: 1720, h: 740, r: 54 },
-    inner: { x: 220, y: 360, w: 1520, h: 540, r: 44 },
-    cross: [
-      { x: 740, y: 610, w: 240, h: 110 },
-      { x: 1210, y: 520, w: 240, h: 110 },
-    ]
+function buildSuburbanRoads(W, H){
+  const asphalt = [];
+  const sidewalk = [];
+  const marks = [];
+  const driveways = [];
+
+  const addStreet = (x,y,w,h,r=22) => {
+    sidewalk.push({ x: x-14, y: y-14, w: w+28, h: h+28, r: r+10 });
+    asphalt.push ({ x, y, w, h, r });
   };
+
+  // Main horizontal spine (wide)
+  addStreet(120, 760, 2360, 180, 28);
+
+  // Upper residential street
+  addStreet(160, 520, 2280, 140, 24);
+
+  // Lower residential street
+  addStreet(160, 1020, 2280, 140, 24);
+
+  // Left vertical (market street)
+  addStreet(380, 260, 160, 520, 24);
+
+  // Center vertical (park connector)
+  addStreet(1340, 320, 180, 900, 26);
+
+  // Right vertical (studio strip)
+  addStreet(2100, 560, 180, 620, 24);
+
+  // Cul-de-sac bulb (bottom-right)
+  sidewalk.push({ x: 2200, y: 1060, w: 420, h: 320, r: 140 });
+  asphalt.push ({ x: 2216, y: 1076, w: 388, h: 288, r: 132 });
+
+  // Lane marks
+  for (let i=0;i<30;i++) marks.push({ x: 190 + i*74, y: 850, w: 34, h: 4 });
+  for (let i=0;i<20;i++) marks.push({ x: 1415, y: 360 + i*58, w: 4, h: 28 });
+
+  return { asphalt, sidewalk, marks, driveways };
 }
 
-function house(x,y,w,h,accent,variant){
-  return { kind:"house", x,y,w,h, accent, variant };
+/* ===================== Lots (NO overlap) ===================== */
+
+function buildSuburbanLots({ rng, W, H, roads, addBuilding, addYard, addProp, addDriveway }){
+  // PARK BLOCK (center-right)
+  const park = { kind:"park", x: 980, y: 360, w: 820, h: 520 };
+  addBuilding(park);
+
+  // Park props
+  for (let i=0;i<18;i++){
+    const x = park.x + 60 + rng()*(park.w-120);
+    const y = park.y + 60 + rng()*(park.h-120);
+    addProp({ type:"tree", x, y, s: 1.0 + rng()*0.25, baseY: y+2 });
+  }
+  addProp({ type:"bench", x: park.x+park.w*0.35, y: park.y+park.h*0.55, s: 1, baseY: park.y+park.h*0.55+2 });
+  addProp({ type:"bench", x: park.x+park.w*0.65, y: park.y+park.h*0.45, s: 1, baseY: park.y+park.h*0.45+2 });
+
+  // MARKET (top-left)
+  addBuilding({ kind:"market", x: 240, y: 300, w: 340, h: 200 });
+
+  // STUDIO (right strip)
+  addBuilding({ kind:"studio", x: 1940, y: 660, w: 420, h: 240 });
+
+  // HOUSE ROWS (planned blocks)
+  // Upper row (faces down toward upper street)
+  addHouseRow({
+    rng, addBuilding, addYard, addProp, addDriveway,
+    x0: 160, y0: 300, count: 6, lotW: 260, lotH: 190, gap: 18,
+    faceDown: true, streetY: 520
+  });
+
+  // Between upper and main (faces down toward main)
+  addHouseRow({
+    rng, addBuilding, addYard, addProp, addDriveway,
+    x0: 160, y0: 600, count: 6, lotW: 260, lotH: 190, gap: 18,
+    faceDown: true, streetY: 760
+  });
+
+  // Between main and lower (faces up toward main)
+  addHouseRow({
+    rng, addBuilding, addYard, addProp, addDriveway,
+    x0: 160, y0: 940, count: 6, lotW: 260, lotH: 190, gap: 18,
+    faceDown: false, streetY: 940
+  });
+
+  // Below lower (faces up toward lower street)
+  addHouseRow({
+    rng, addBuilding, addYard, addProp, addDriveway,
+    x0: 160, y0: 1220, count: 6, lotW: 260, lotH: 240, gap: 18,
+    faceDown: false, streetY: 1020
+  });
+
+  // A few cul-de-sac homes (spaced, no overlap)
+  const cx = 2380, cy = 1200;
+  for (let i=0;i<5;i++){
+    const t = (-1.1 + i*0.50);
+    const hx = cx + Math.cos(t)*170 - 90;
+    const hy = cy + Math.sin(t)*110 - 60;
+    addBuilding({ kind:"house", x: Math.round(hx), y: Math.round(hy), w: 182, h: 120, accent: i%3, variant: (i+1)%3 });
+    addYard({ x: Math.round(hx)-14, y: Math.round(hy)-12, w: 210, h: 160 });
+    // mailbox
+    const mbx = Math.round(hx) + 96;
+    const mby = Math.round(hy) + 142;
+    addProp({ type:"mailbox", x: mbx, y: mby, s: 1, baseY: mby+2 });
+  }
 }
 
-function addPropsSimple(props){
-  // Neighborhood trees
-  props.push(
-    { type:"tree", x: 120,  y: 300, s: 1.15, baseY: 302 },
-    { type:"tree", x: 720,  y: 980, s: 1.05, baseY: 982 },
-    { type:"tree", x: 1760, y: 340, s: 1.15, baseY: 342 },
-    { type:"tree", x: 1700, y: 980, s: 1.05, baseY: 982 },
-    { type:"tree", x: 980,  y: 230, s: 1.05, baseY: 232 },
-  );
+function addHouseRow({ rng, addBuilding, addYard, addProp, addDriveway, x0, y0, count, lotW, lotH, gap, faceDown, streetY }){
+  for (let i=0;i<count;i++){
+    const lotX = x0 + i*(lotW+gap);
+    const lotY = y0;
 
-  // Lamps on loop corners
-  props.push(
-    { type:"lamp", x: 220,  y: 300, s: 1, baseY: 302 },
-    { type:"lamp", x: 1760, y: 300, s: 1, baseY: 302 },
-    { type:"lamp", x: 220,  y: 980, s: 1, baseY: 982 },
-    { type:"lamp", x: 1760, y: 980, s: 1, baseY: 982 },
-  );
+    // Yard
+    const yard = { x: lotX+10, y: lotY+10, w: lotW-20, h: lotH-20 };
+    addYard(yard);
 
-  // Benches near plaza
-  props.push(
-    { type:"bench", x: 860, y: 420, s: 1, baseY: 422 },
-    { type:"bench", x: 1040, y: 420, s: 1, baseY: 422 },
-  );
+    // House inside yard (never overlaps others)
+    const houseW = 168 + Math.floor(rng()*28);
+    const houseH = 110 + Math.floor(rng()*20);
+    const hx = lotX + (lotW-houseW)/2;
+    const hy = faceDown ? (lotY + lotH - houseH - 24) : (lotY + 24);
 
-  // Mailboxes near homes
-  props.push(
-    { type:"mailbox", x: 200, y: 520, s: 1, baseY: 522 },
-    { type:"mailbox", x: 460, y: 520, s: 1, baseY: 522 },
-  );
+    addBuilding({
+      kind:"house",
+      x: Math.round(hx), y: Math.round(hy),
+      w: houseW, h: houseH,
+      accent: i%3,
+      variant: (i + Math.floor(rng()*3))%3
+    });
+
+    // Driveway (connect to street)
+    const dW = 58;
+    const dH = 86 + Math.floor(rng()*22);
+    const dX = lotX + 28 + Math.floor(rng()*40);
+    const dY = faceDown ? (streetY + 8) : (streetY - dH - 8);
+    yard.drive = { x:dX, y:dY, w:dW, h:dH };
+    addDriveway({ x:dX, y:dY, w:dW, h:dH, r: 10 });
+
+    // Walkway
+    const walkH = 50;
+    const walkY = faceDown ? (hy - walkH) : (hy + houseH);
+    yard.walk = { x: hx + houseW*0.5 - 8, y: walkY, w: 16, h: walkH };
+
+    // Mailbox
+    const mbY = faceDown ? (streetY + 18) : (streetY - 18);
+    addProp({ type:"mailbox", x: dX + dW + 10, y: mbY, s: 1, baseY: mbY+2 });
+
+    // Trees (placed in back corners so they never block driveways visually)
+    if (rng() < 0.75){
+      const tx = yard.x + 28 + rng()*46;
+      const ty = yard.y + yard.h - 16;
+      addProp({ type:"tree", x: tx, y: ty, s: 0.95 + rng()*0.25, baseY: ty+2 });
+    }
+    if (rng() < 0.35){
+      const tx = yard.x + yard.w - (28 + rng()*46);
+      const ty = yard.y + yard.h - 16;
+      addProp({ type:"tree", x: tx, y: ty, s: 0.90 + rng()*0.25, baseY: ty+2 });
+    }
+
+    // Bushes
+    const bushes = 2 + Math.floor(rng()*2);
+    for (let k=0;k<bushes;k++){
+      const bx = yard.x + 36 + k*(yard.w/(bushes+1));
+      const by = yard.y + 28 + rng()*10;
+      addProp({ type:"bush", x: bx, y: by, s: 0.75 + rng()*0.25, baseY: by+2 });
+    }
+
+    // Flowers
+    if (rng() < 0.5) addFlowerPatch(addProp, rng, yard.x + yard.w*0.55, yard.y + yard.h*0.55);
+  }
 }
 
-/* ===================== Drawing ===================== */
+/* ===================== Visuals ===================== */
 
 function drawGround(ctx, x, y, w, h){
   ctx.fillStyle = "#556b33";
@@ -199,7 +312,7 @@ function drawGround(ctx, x, y, w, h){
   // micro-noise
   ctx.globalAlpha = 0.10;
   ctx.fillStyle = "#000";
-  for (let i=0; i<5200; i++){
+  for (let i=0; i<6400; i++){
     const px = (i*37) % w;
     const py = (i*91) % h;
     if ((i % 2) === 0) ctx.fillRect(x + px, y + py, 1, 1);
@@ -209,7 +322,7 @@ function drawGround(ctx, x, y, w, h){
   // warm flecks
   ctx.globalAlpha = 0.07;
   ctx.fillStyle = "#d9c18b";
-  for (let i=0; i<1400; i++){
+  for (let i=0; i<1700; i++){
     const px = (i*53) % w;
     const py = (i*131) % h;
     if ((i % 7) === 0) ctx.fillRect(x + px, y + py, 1, 1);
@@ -217,47 +330,94 @@ function drawGround(ctx, x, y, w, h){
   ctx.globalAlpha = 1;
 }
 
-function drawYard(ctx, y){
-  const grass = (y.style === "plaza") ? "#5a7434" : "#56753a";
+function drawYardLawn(ctx, y){
   ctx.globalAlpha = 0.95;
-  ctx.fillStyle = grass;
+  ctx.fillStyle = "#56753a";
   roundRect(ctx, y.x, y.y, y.w, y.h, 18, true);
 
-  ctx.globalAlpha = 0.08;
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = "#000";
+  for (let i=0;i<240;i++){
+    const px = y.x + ((i*19) % y.w);
+    const py = y.y + ((i*41) % y.h);
+    if (i % 4 === 0) ctx.fillRect(px, py, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawYardDetails(ctx, y){
+  if (y.drive){
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = "#a8a294";
+    roundRect(ctx, y.drive.x, y.drive.y, y.drive.w, y.drive.h, 10, true);
+    ctx.globalAlpha = 1;
+  }
+  if (y.walk){
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = "#d3c8b5";
+    roundRect(ctx, y.walk.x, y.walk.y, y.walk.w, y.walk.h, 8, true);
+    ctx.globalAlpha = 1;
+  }
+  // subtle fence
+  ctx.globalAlpha = 0.10;
   ctx.fillStyle = "#000";
   roundRect(ctx, y.x+10, y.y+y.h-18, y.w-20, 8, 6, true);
   ctx.globalAlpha = 1;
 }
 
-function drawRoadLoopVisual(ctx, r){
-  // sidewalk ring
-  ctx.fillStyle = "#c3bdaa";
-  roundRect(ctx, r.loop.x-14, r.loop.y-14, r.loop.w+28, r.loop.h+28, r.loop.r+10, true);
-  // asphalt ring
-  ctx.fillStyle = "#24242c";
-  roundRect(ctx, r.loop.x, r.loop.y, r.loop.w, r.loop.h, r.loop.r, true);
-  // carve inner grass
-  ctx.fillStyle = "#556b33";
-  roundRect(ctx, r.inner.x, r.inner.y, r.inner.w, r.inner.h, r.inner.r, true);
+function drawRoads(ctx, roads){
+  // sidewalks first
+  for (const s of roads.sidewalk){
+    ctx.fillStyle = "#c3bdaa";
+    roundRect(ctx, s.x, s.y, s.w, s.h, s.r || 14, true);
 
-  // lane marks
-  ctx.globalAlpha = 0.30;
-  ctx.fillStyle = "#efe8d6";
-  for (let i=0;i<22;i++){
-    ctx.fillRect(r.loop.x + 60 + i*74, r.loop.y + r.loop.h/2, 34, 4);
-  }
-  ctx.globalAlpha = 1;
-
-  // crosswalks
-  for (const c of r.cross){
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = "rgba(239,232,214,.9)";
-    for (let i=0;i<8;i++){
-      const xx = c.x + 10 + i*((c.w-20)/8);
-      ctx.fillRect(xx, c.y+10, 10, c.h-20);
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = "#000";
+    for (let i=0;i<10;i++){
+      ctx.fillRect(s.x + 10 + i*(s.w/10), s.y + 6, 1, s.h-12);
     }
     ctx.globalAlpha = 1;
   }
+
+  // asphalt
+  for (const r of roads.asphalt){
+    ctx.fillStyle = "#24242c";
+    roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, true);
+
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#000";
+    for (let i=0; i<1100; i++){
+      const px = r.x + ((i*29) % r.w);
+      const py = r.y + ((i*71) % r.h);
+      if ((i % 3) === 0) ctx.fillRect(px, py, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = "rgba(0,0,0,.55)";
+    ctx.lineWidth = 7;
+    roundRect(ctx, r.x, r.y, r.w, r.h, r.r || 18, false);
+    ctx.globalAlpha = 1;
+
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = "#fff";
+    roundRect(ctx, r.x+10, r.y+10, r.w-20, 10, 8, true);
+    ctx.globalAlpha = 1;
+  }
+
+  // lane marks
+  ctx.globalAlpha = 0.33;
+  ctx.fillStyle = "#efe8d6";
+  for (const m of roads.marks) ctx.fillRect(m.x, m.y, m.w, m.h);
+  ctx.globalAlpha = 1;
+
+  // driveways connect visually
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#a8a294";
+  for (const d of roads.driveways){
+    roundRect(ctx, d.x, d.y, d.w, d.h, d.r || 10, true);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawHouse(ctx, b){
@@ -290,7 +450,13 @@ function drawHouse(ctx, b){
   roundRect(ctx, x+w*0.5-14, y+h-44, 28, 34, 6, true);
   ctx.globalAlpha = 1;
 
-  // accent strip
+  // grime base
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = "#000";
+  roundRect(ctx, x+6, y+h-18, w-12, 12, 8, true);
+  ctx.globalAlpha = 1;
+
+  // violet accent strip
   const accents = [
     "rgba(138,46,255,.05)",
     "rgba(138,46,255,.07)",
@@ -305,13 +471,11 @@ function drawMarket(ctx, b){
   ctx.fillStyle = "#b9b2a2";
   roundRect(ctx, x, y, w, h, 16, true);
 
-  // awning
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = "rgba(138,46,255,.20)";
   roundRect(ctx, x+12, y+44, w-24, 28, 10, true);
   ctx.globalAlpha = 1;
 
-  // glass
   ctx.globalAlpha = 0.35;
   ctx.fillStyle = "#111118";
   roundRect(ctx, x+22, y+82, w-44, h-116, 10, true);
@@ -323,7 +487,6 @@ function drawStudio(ctx, b){
   ctx.fillStyle = "#cbbd9c";
   roundRect(ctx, x, y, w, h, 18, true);
 
-  // ribs
   ctx.globalAlpha = 0.16;
   ctx.fillStyle = "#000";
   for (let i=0;i<10;i++){
@@ -331,7 +494,6 @@ function drawStudio(ctx, b){
   }
   ctx.globalAlpha = 1;
 
-  // door
   ctx.globalAlpha = 0.55;
   ctx.fillStyle = "#14131a";
   roundRect(ctx, x+w*0.5-22, y+h-52, 44, 42, 10, true);
@@ -341,19 +503,24 @@ function drawStudio(ctx, b){
   ctx.fillRect(x, y+10, w, 8);
 }
 
-function drawPlaza(ctx, b){
+function drawParkBlock(ctx, b){
   const { x,y,w,h } = b;
-  ctx.fillStyle = "#b9b0a1";
-  roundRect(ctx, x, y, w, h, 22, true);
-
-  // inner pad
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = "#000";
-  roundRect(ctx, x+26, y+32, w-52, h-64, 18, true);
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#4f6f39";
+  roundRect(ctx, x, y, w, h, 34, true);
   ctx.globalAlpha = 1;
 
-  ctx.fillStyle = "rgba(138,46,255,.10)";
-  roundRect(ctx, x+20, y+16, w-40, 16, 10, true);
+  // path loop
+  ctx.globalAlpha = 0.70;
+  ctx.fillStyle = "#d8c6a2";
+  roundRect(ctx, x+70, y+80, w-140, h-160, 30, true);
+  ctx.globalAlpha = 1;
+
+  // inner meadow
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#4a6a35";
+  roundRect(ctx, x+100, y+110, w-200, h-220, 26, true);
+  ctx.globalAlpha = 1;
 }
 
 /* ===================== Props ===================== */
@@ -438,7 +605,56 @@ function drawMailbox(ctx, x, y, s){
   ctx.globalAlpha = 1;
 }
 
-/* ===================== Geometry ===================== */
+function drawBush(ctx, x,y,s){
+  ctx.fillStyle = "#4a5b2f";
+  blob(ctx, x, y, 26*s, 16*s, 0.08);
+  ctx.fillStyle = "#3b4b26";
+  blob(ctx, x+14*s, y+3*s, 20*s, 12*s, 0.12);
+  ctx.fillStyle = "#566b36";
+  blob(ctx, x-12*s, y+2*s, 22*s, 14*s, -0.06);
+
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = "rgba(0,0,0,.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(x, y+1*s, 28*s, 16*s, 0.08, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawFlower(ctx, x,y,s,cIndex){
+  const colors = ["#f2ead8", "#f0d7e2", "#e9f0d9"];
+  const c = colors[cIndex % colors.length];
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = c;
+  ctx.beginPath();
+  ctx.ellipse(x, y, 2.2*s, 1.6*s, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function addFlowerPatch(add, rng, x, y){
+  for (let i=0;i<14;i++){
+    const yy = y + (rng()*60-30);
+    add({
+      type:"flower",
+      x: x + (rng()*110-55),
+      y: yy,
+      s: 0.8 + rng()*0.6,
+      baseY: yy + 8,
+      c: Math.floor(rng()*3)
+    });
+  }
+}
+
+/* ===================== Geometry / RNG ===================== */
+
+function aabb(a,b){
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
 
 function roundRect(ctx, x, y, w, h, r, fill){
   const rr = Math.min(r, w/2, h/2);
@@ -456,4 +672,12 @@ function blob(ctx, cx, cy, rx, ry, rot = 0){
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI*2);
   ctx.fill();
+}
+
+function makeRng(seed){
+  let s = seed >>> 0;
+  return function(){
+    s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+    return ((s >>> 0) % 10000) / 10000;
+  };
 }
