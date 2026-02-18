@@ -1,4 +1,4 @@
-// NPC City — World v5 (clean spacing + exits + collision fix)
+// NPC City — World v4 FINAL (clean edges + spacing + resized management)
 
 export class World{
   constructor(){
@@ -14,9 +14,9 @@ export class World{
     this.landmarks = [];
     this.trees = [];
 
+    // ROADS
     const roadW = 200;
 
-    // ROADS
     this.roads = [
       {x:0,y:0,w:this.w,h:roadW},
       {x:0,y:this.h-roadW,w:this.w,h:roadW},
@@ -24,53 +24,39 @@ export class World{
       {x:this.w-roadW,y:0,w:roadW,h:this.h},
     ];
 
-    // DISTRICT EXITS
-    this.exits = [
-      {x:this.w/2-120,y:0,w:240,h:roadW,target:"northDistrict"},
-      {x:0,y:this.h/2-120,w:roadW,h:240,target:"westDistrict"},
-      {x:this.w-roadW,y:this.h/2-120,w:roadW,h:240,target:"eastDistrict"}
-    ];
-
-    // PARK (pulled inward so grass never touches sidewalks)
-    this.park = { x:880, y:480, w:640, h:440 };
+    // PARK
+    this.park = { x:840, y:440, w:720, h:520 };
 
     // BUILDINGS
     this.addBuilding(820,220,760,170,"south");
     this.addBuilding(820,1010,760,170,"north");
     this.addBuilding(640,440,200,520,"east");
 
-    // MANAGEMENT (smaller)
-    this.addBuilding(1180,1040,100,60,"north","management");
+    // management building cut in half + centered
+    this.addBuilding(1160,1080,80,100,"north","management");
 
-    // DRIVEWAY TO MANAGEMENT
-    this.driveway = {x:1200,y:this.h-roadW,w:120,h:200};
-
-    // SECURITY BOOTH
-    this.security = {x:1350,y:1080,w:60,h:60};
-    this.solids.push(this.security);
-
-    // MAIL / PAYPHONE BOX
+    // mailbox/payphone box
     this.box = {x:240,y:1080,w:60,h:60};
-    this.solids.push(this.box);
+    this.solids.push({x:240,y:1080,w:60,h:60});
 
     // AMENITIES
     this.pool   = {x:1700,y:460,w:420,h:220};
     this.tennis = {x:1700,y:740,w:420,h:260};
 
-    // FENCE
+    // fence
     this.fence = {x:1680,y:440,w:460,h:580};
     this.solids.push(
-      {x:this.fence.x,y:this.fence.y,w:this.fence.w, h:10},
-      {x:this.fence.x,y:this.fence.y+this.fence.h-10,w:this.fence.w, h:10},
-      {x:this.fence.x,y:this.fence.y,w:10, h:this.fence.h},
-      {x:this.fence.x+this.fence.w-10,y:this.fence.y,w:10, h:this.fence.h}
+      {x:this.fence.x,y:this.fence.y,w:this.fence.w,h:10},
+      {x:this.fence.x,y:this.fence.y+this.fence.h-10,w:this.fence.w,h:10},
+      {x:this.fence.x,y:this.fence.y,w:10,h:this.fence.h},
+      {x:this.fence.x+this.fence.w-10,y:this.fence.y,w:10,h:this.fence.h}
     );
 
-    // PARKING
-    this.parking = {x:480,y:1120,w:1440,h:220};
-    this.parkingRoad = {x:480,y:1210,w:1440,h:70};
+    // PARKING (shifted inward so it never touches grass)
+    this.parking = {x:520,y:1160,w:1360,h:180};
+    this.parkingRoad = {x:520,y:1220,w:1360,h:60};
 
-    // CONNECTOR
+    // connector road
     this.connector = {x:1100,y:this.h-roadW,w:200,h:220};
 
     // SIDEWALKS
@@ -81,25 +67,25 @@ export class World{
       {x:this.park.x+this.park.w+10,y:this.park.y,w:30,h:this.park.h},
     ];
 
-    // TREES (smaller collision so sidewalks stay clear)
+    // TREES
     const spots=[[800,420],[1600,420],[800,1000],[1600,1000]];
     for(const t of spots){
       this.trees.push({x:t[0],y:t[1]});
-      this.solids.push({x:t[0]-8,y:t[1]-8,w:16,h:16});
+      this.solids.push({x:t[0]-14,y:t[1]-14,w:28,h:28});
     }
 
-    // WORLD BOUNDS
-    this.solids.push({x:-200,y:-200,w:this.w+400,h:200});
-    this.solids.push({x:-200,y:this.h,w:this.w+400,h:200});
-    this.solids.push({x:-200,y:-200,w:200,h:this.h+400});
-    this.solids.push({x:this.w,y:-200,w:200,h:this.h+400});
+    // WORLD BOUNDS (tight edges only, no road blockers)
+    this.solids.push({x:-50,y:-50,w:this.w+100,h:50});
+    this.solids.push({x:-50,y:this.h,w:this.w+100,h:50});
+    this.solids.push({x:-50,y:-50,w:50,h:this.h+100});
+    this.solids.push({x:this.w,y:-50,w:50,h:this.h+100});
 
     // LANDMARKS
     this.landmarks.push({x:1200,y:420,text:"Central Park"});
     this.landmarks.push({x:1780,y:430,text:"Pool"});
     this.landmarks.push({x:1780,y:720,text:"Tennis"});
-    this.landmarks.push({x:520,y:1110,text:"Parking"});
-    this.landmarks.push({x:1220,y:1000,text:"Management"});
+    this.landmarks.push({x:540,y:1140,text:"Parking"});
+    this.landmarks.push({x:1200,y:1040,text:"Management"});
   }
 
   addBuilding(x,y,w,h,doorSide,type="building"){
@@ -146,43 +132,52 @@ export class World{
     ctx.save();
     ctx.translate(-cam.x,-cam.y);
 
+    // roads
     ctx.fillStyle="#2c2c34";
     for(const r of this.roads) ctx.fillRect(r.x,r.y,r.w,r.h);
 
+    // connector road
     ctx.fillRect(this.connector.x,this.connector.y,this.connector.w,this.connector.h);
-    ctx.fillRect(this.driveway.x,this.driveway.y,this.driveway.w,this.driveway.h);
 
+    // parking base
     ctx.fillStyle="#3a3a42";
     ctx.fillRect(this.parking.x,this.parking.y,this.parking.w,this.parking.h);
 
+    // parking strip
     ctx.fillStyle="#2c2c34";
     ctx.fillRect(this.parkingRoad.x,this.parkingRoad.y,this.parkingRoad.w,this.parkingRoad.h);
 
+    // sidewalks
     ctx.fillStyle="#bdb6a8";
     for(const s of this.sidewalks) ctx.fillRect(s.x,s.y,s.w,s.h);
 
+    // park
     ctx.fillStyle="#5f7f41";
     ctx.fillRect(this.park.x,this.park.y,this.park.w,this.park.h);
 
+    // amenities
     ctx.fillStyle="#1e6b70";
     ctx.fillRect(this.pool.x,this.pool.y,this.pool.w,this.pool.h);
 
     ctx.fillStyle="#3e6f66";
     ctx.fillRect(this.tennis.x,this.tennis.y,this.tennis.w,this.tennis.h);
 
+    // fence
     ctx.fillStyle="#888";
     ctx.fillRect(this.fence.x,this.fence.y,this.fence.w,6);
     ctx.fillRect(this.fence.x,this.fence.y+this.fence.h-6,this.fence.w,6);
     ctx.fillRect(this.fence.x,this.fence.y,6,this.fence.h);
     ctx.fillRect(this.fence.x+this.fence.w-6,this.fence.y,6,this.fence.h);
 
+    // buildings
     ctx.fillStyle="#c9c0ae";
     for(const b of this.buildings) ctx.fillRect(b.x,b.y,b.w,b.h);
 
+    // mailbox box
     ctx.fillStyle="#999";
     ctx.fillRect(this.box.x,this.box.y,this.box.w,this.box.h);
-    ctx.fillRect(this.security.x,this.security.y,this.security.w,this.security.h);
 
+    // trees
     ctx.fillStyle="#2f5f2f";
     for(const t of this.trees) ctx.fillRect(t.x-10,t.y-10,20,20);
 
