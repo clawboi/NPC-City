@@ -411,6 +411,7 @@ this.camera.y = Math.round(this.camera.y);
     );
     ctx.fill();
 
+    const liftY = -this.player.z;
     drawPlayerGhibliZelda(ctx, this.player);
 
     // Punch ring (visual)
@@ -590,3 +591,164 @@ function drawPlayerGhibliZelda(ctx, p){
 
 function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 function lerp(a,b,t){ return a + (b-a)*t; }
+
+// ===== OVERRIDE: Cute (but slightly dark) blonde girl sprite, subtle motions =====
+// Paste at VERY BOTTOM of game.js (after clamp/lerp). Last definition wins.
+
+function drawPlayerGhibliZelda(ctx, p){
+  // Slightly bigger than the collider, not huge
+  const px = 2;
+  const W = 18 * px;
+  const H = 22 * px;
+
+  // Anchor: centered on collider, feet at bottom
+  const cx = p.x + p.w/2;
+  const feetY = p.y + p.h + 2;
+  const sx = Math.round(cx - W/2);
+  const sy = Math.round(feetY - H - (p.z || 0));
+
+  // --- Determine “moving” without touching update() ---
+  // Track last position to get speed (paste-only friendly)
+  const now = performance.now();
+  p._sprLastT ??= now;
+  p._sprLastX ??= p.x;
+  p._sprLastY ??= p.y;
+
+  const dt = Math.max(1/120, Math.min(1/20, (now - p._sprLastT) / 1000));
+  const vx = (p.x - p._sprLastX) / dt;
+  const vy = (p.y - p._sprLastY) / dt;
+  const speed = Math.hypot(vx, vy);
+
+  p._sprLastT = now;
+  p._sprLastX = p.x;
+  p._sprLastY = p.y;
+
+  const moving = speed > 10;       // threshold
+  const running = speed > 170;     // your run speed ~220, walk ~150
+
+  // --- Subtle animation: never more than 1px swings ---
+  const t = now * 0.0022;
+  const walkPhase = moving ? Math.sin(t * (running ? 9.0 : 6.0)) : 0;
+
+  const footA = moving ? Math.round(walkPhase * 1) : 0;
+  const footB = moving ? Math.round(-walkPhase * 1) : 0;
+  const armA  = moving ? Math.round(-walkPhase * 1) : 0;
+  const armB  = moving ? Math.round(walkPhase * 1) : 0;
+
+  // Idle breathe (very soft)
+  const acting = (p.jumpT>0)||(p.dodgeT>0)||(p.punchT>0);
+  const breathe = (!moving && !acting) ? Math.round(Math.sin(t*0.9) * 1) : 0;
+
+  // Blink (quick, cute)
+  p._blinkT ??= 1.7 + Math.random()*2.7;
+  p._blinkHold ??= 0;
+  if (p._blinkHold > 0) p._blinkHold = Math.max(0, p._blinkHold - dt);
+  else {
+    p._blinkT -= dt;
+    if (p._blinkT <= 0){
+      p._blinkHold = 0.11;
+      p._blinkT = 1.8 + Math.random()*3.2;
+    }
+  }
+  const blinking = p._blinkHold > 0;
+
+  const y = sy + breathe;
+
+  // Palette: cute but slightly dark vibe
+  const outline = "rgba(10,10,18,.55)";
+  const skin    = "#f2c8b0";
+  const blush   = "rgba(255,120,160,.18)";
+  const hair    = "#f4db7d";  // blonde
+  const hairS   = "#c9b058";  // shade blonde
+  const coat    = "#1a1a22";  // dark outfit
+  const coatS   = "#2a2a34";
+  const scarf   = "rgba(138,46,255,.85)";
+  const boot    = "#111116";
+  const sock    = "#c9c0ae";
+  const eyeLine = "#101018";
+  const blue    = "#4aa8ff";
+  const blueS   = "#2b6ea8";
+  const white   = "rgba(255,255,255,.85)";
+
+  // helpers
+  function fill(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+  function stroke(x,y,w,h){
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x,y,w,h);
+  }
+
+  // Ground shadow (keeps her from “floating”)
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(cx, feetY + 2, 12, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // ===== HEAD (bigger eyes, cute proportions) =====
+  fill(sx+5*px, y+1*px, 8*px, 7*px, skin);
+  fill(sx+6*px, y+0*px, 6*px, 1*px, skin);
+
+  // Hair cap + side strands
+  fill(sx+5*px, y+1*px, 8*px, 3*px, hairS);
+  fill(sx+5*px, y+1*px, 8*px, 2*px, hair);
+  fill(sx+4*px, y+3*px, 2*px, 4*px, hairS);
+  fill(sx+12*px, y+3*px, 2*px, 4*px, hairS);
+
+  // Eyes: bigger + blue (but not creepy)
+  if (blinking){
+    fill(sx+7*px, y+5*px, 2*px, 1*px, eyeLine);
+    fill(sx+10*px, y+5*px, 2*px, 1*px, eyeLine);
+  } else {
+    // iris
+    fill(sx+7*px,  y+4*px, 2*px, 3*px, blueS);
+    fill(sx+10*px, y+4*px, 2*px, 3*px, blueS);
+    // bright iris top-left
+    fill(sx+7*px,  y+4*px, 1*px, 1*px, blue);
+    fill(sx+10*px, y+4*px, 1*px, 1*px, blue);
+    // pupil
+    fill(sx+8*px,  y+6*px, 1*px, 1*px, eyeLine);
+    fill(sx+11*px, y+6*px, 1*px, 1*px, eyeLine);
+    // highlight
+    fill(sx+8*px,  y+4*px, 1*px, 1*px, white);
+    fill(sx+11*px, y+4*px, 1*px, 1*px, white);
+  }
+
+  // blush (tiny)
+  ctx.save();
+  ctx.globalAlpha = 0.8;
+  fill(sx+6*px, y+6*px, 1*px, 1*px, blush);
+  fill(sx+12*px, y+6*px, 1*px, 1*px, blush);
+  ctx.restore();
+
+  stroke(sx+5*px, y+1*px, 8*px, 7*px);
+
+  // ===== SCARF (violet accent) =====
+  fill(sx+6*px, y+8*px, 6*px, 2*px, scarf);
+  stroke(sx+6*px, y+8*px, 6*px, 2*px);
+
+  // ===== BODY (dark coat) =====
+  fill(sx+6*px, y+10*px, 6*px, 7*px, coat);
+  ctx.save(); ctx.globalAlpha = 0.55;
+  fill(sx+9*px, y+10*px, 3*px, 7*px, coatS);
+  ctx.restore();
+  stroke(sx+6*px, y+10*px, 6*px, 7*px);
+
+  // ===== ARMS (subtle 1px sway) =====
+  fill(sx+4*px, y+(11+armA)*px, 2*px, 5*px, coat);
+  fill(sx+12*px, y+(11+armB)*px, 2*px, 5*px, coat);
+  stroke(sx+4*px, y+(11+armA)*px, 2*px, 5*px);
+  stroke(sx+12*px, y+(11+armB)*px, 2*px, 5*px);
+
+  // ===== LEGS / BOOTS (tiny step) =====
+  fill(sx+7*px, y+(17+footA)*px, 2*px, 2*px, sock);
+  fill(sx+10*px, y+(17+footB)*px, 2*px, 2*px, sock);
+
+  fill(sx+7*px, y+(19+footA)*px, 2*px, 3*px, boot);
+  fill(sx+10*px, y+(19+footB)*px, 2*px, 3*px, boot);
+  stroke(sx+7*px, y+(19+footA)*px, 2*px, 3*px);
+  stroke(sx+10*px, y+(19+footB)*px, 2*px, 3*px);
+}
+
