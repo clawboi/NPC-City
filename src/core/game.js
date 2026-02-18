@@ -1,5 +1,6 @@
 // src/core/game.js
 import { Player } from "../entities/player.js";
+import { Inventory } from "./inventory.js";
 
 export class Game {
   constructor({ canvas, ctx, input, save, ui, assets, world }){
@@ -46,6 +47,10 @@ export class Game {
 
     // renderer-only player
     this.playerSprite = new Player();
+    // Inventory (OFF by default: no default loadout)
+this.inv = new Inventory();
+this.inv.bindHotkeys();              // enables 1/2/3
+this.inv.applyToPlayer(this.player); // ensures player.held starts null
 
     ui.onStart = (role) => this.startNew(role);
     ui.onContinue = () => this.continueGame();
@@ -290,6 +295,9 @@ export class Game {
     // FX tick
     for (let i=0; i<this.fx.length; i++) this.fx[i].t += dt;
     this.fx = this.fx.filter(f => f.t < f.dur);
+
+    // keep held item updated after hotkeys
+if (this.inv) this.inv.applyToPlayer(this.player);
 
     // autosave
     this._saveTimer = (this._saveTimer || 0) + dt;
