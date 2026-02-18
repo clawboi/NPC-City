@@ -1,15 +1,13 @@
-// NPC City — World (Townhome District v2: CLEAN layout, NO overlaps, walkable flow)
+// NPC City — World (Townhome District v3: CLEANER flow, NO overlaps, fewer snag-collisions)
 // Drop-in replacement for src/world/world.js ONLY.
 //
-// Goals (per Ethan):
-// - One district: townhome complex vibe (central green), suburban, clean
-// - Minimal props (layout first)
-// - NO overlaps between buildings/amenities/roads
-// - Collisions: buildings + fences + tree trunks (you cannot walk over structures)
-// - Flow: easy cut-throughs, no annoying detours
+// What this fixes vs v2:
+// - Parking lot NO LONGER overlaps the south perimeter road (big source of visual + collision mess).
+// - Amenity zone is isolated with a buffer + service road; fences have a real gate gap.
+// - Collisions are slightly "softer" (less snaggy) by using slimmer fence/curb thickness + gentler building insets.
+// - Road layout is simplified and kept away from major pads so nothing stacks on top of each other.
 //
-// Notes:
-// - Bush slowdown is exposed via slowZones/slowFactorAt but requires engine support.
+// Still "layout-first": minimal props, clean walkability, suburban townhome complex vibe.
 
 export class World {
   constructor(){
@@ -35,35 +33,31 @@ export class World {
     const rng = makeRng(19200);
 
     // ===== Big shapes (NO overlap) =====
-    // Central green is intentionally smaller/cleaner than v1.
     this.green = { x: 900, y: 520, w: 920, h: 680, r: 170 };
 
-    // Amenity zone lives EAST of the complex, separated by a service road and buffer.
-    // This prevents the "huge building over pool" overlap you showed.
+    // Amenity zone lives EAST with its own fence + inner pad
     this.amenityZone = { x: 2120, y: 520, w: 720, h: 820 };
-
-    // Within amenity zone
     this.tennis = { x: 2220, y: 580,  w: 420, h: 240, r: 26 };
     this.pool   = { x: 2220, y: 890,  w: 420, h: 250, r: 26 };
     this.mgmtB  = { x: 2340, y: 1180, w: 300, h: 150, kind:"mgmt", doors:"north" };
 
-    // Parking band sits SOUTH-WEST (one edge) with defined curbs + 3 entrances.
-    this.parking = { x: 340, y: 1360, w: 1680, h: 260, r: 26 };
+    // Parking is a separate lot pad ABOVE the south perimeter road (no overlap)
+    this.parking = { x: 340, y: 1320, w: 1680, h: 260, r: 26 };
 
-    // ===== Roads (simple + clean) =====
-    this.roads = buildRoadsClean(this.w, this.h, this.green, this.amenityZone, this.parking);
+    // ===== Roads (clean) =====
+    this.roads = buildRoadsClean(this.w, this.h, this.green);
 
     // ===== Townhome blocks around green (segmented with alleys) =====
     buildTownhomeRing({
       green: this.green,
-      keepOut: [ this.amenityZone, this.parking ], // hard keep-out areas
+      keepOut: [ this.amenityZone, this.parking ],
       rng,
       addBuilding: (b)=>this.buildings.push(b),
       addYard: (y)=>this.yards.push(y),
       addFence: (f)=>this.solids.push(f),
     });
 
-    // ===== Amenities (tennis/pool/mgmt + fence) =====
+    // ===== Amenities =====
     buildAmenitiesClean({
       zone: this.amenityZone,
       tennis: this.tennis,
@@ -74,14 +68,14 @@ export class World {
       addSolid: (s)=>this.solids.push(s),
     });
 
-    // ===== Parking (curbs solids, a few cars visual) =====
+    // ===== Parking =====
     buildParkingClean({
       lot: this.parking,
       addProp: (p)=>this.props.push(p),
       addSolid: (s)=>this.solids.push(s),
     });
 
-    // ===== Minimal nature (trees as solids trunks, a couple lamps/benches) =====
+    // ===== Nature =====
     addNatureClean({
       rng,
       green: this.green,
@@ -91,7 +85,7 @@ export class World {
       addSlow: (z)=>this.slowZones.push(z),
     });
 
-    // ===== Doors (for future E interactions) =====
+    // ===== Doors (future E interactions) =====
     addDoorsForBuildings(this.buildings, this.doors);
 
     // ===== Landmarks =====
@@ -109,9 +103,9 @@ export class World {
     ];
 
     // ===== Collisions =====
-    // Buildings inset so you can slide along walls without snagging.
+    // Softer insets (less “snag”)
     for (const b of this.buildings){
-      this.solids.push({ x: b.x+8, y: b.y+10, w: b.w-16, h: b.h-18, tag:"building" });
+      this.solids.push({ x: b.x+6, y: b.y+8, w: b.w-12, h: b.h-14, tag:"building" });
     }
 
     // Keep player inside world bounds
@@ -141,7 +135,6 @@ export class World {
     return best;
   }
 
-  // Optional helper for slowdown zones (engine must call it)
   slowFactorAt(px, py){
     let f = 1;
     for (const z of this.slowZones){
@@ -169,7 +162,7 @@ export class World {
     // Roads
     drawRoads(ctx, this.roads);
 
-    // Parking (pad)
+    // Parking pad (separate)
     drawParkingPad(ctx, this.parking);
 
     // Amenity pads
@@ -178,7 +171,7 @@ export class World {
     // Yards
     for (const y of this.yards) drawYard(ctx, y);
 
-    // Buildings (shadow + block)
+    // Buildings
     for (const b of this.buildings){
       drawBuildingShadow(ctx, b);
       if (b.kind === "townhome") drawTownhomeBlock(ctx, b);
@@ -211,7 +204,7 @@ export class World {
 
 /* ===================== Roads ===================== */
 
-function buildRoadsClean(W, H, green, amenityZone, parking){
+function buildRoadsClean(W, H, green){
   const asphalt = [];
   const sidewalk = [];
   const marks = [];
@@ -221,21 +214,21 @@ function buildRoadsClean(W, H, green, amenityZone, parking){
     asphalt.push ({ x, y, w, h, r });
   };
 
-  // Outer loop (kept clean)
-  addRoad(240, 260, 2520, 160, 30);   // north
-  addRoad(160, 420, 220, 1080, 44);   // west
-  addRoad(240, 1500, 2520, 160, 30);  // south
-  addRoad(2680, 420, 220, 920, 44);   // east
+  // Outer loop: move SOUTH road lower so it never intersects the parking lot pad.
+  addRoad(240, 260, 2520, 160, 30);    // north
+  addRoad(160, 420, 220, 1200, 44);    // west (down to the new south road)
+  addRoad(240, 1620, 2520, 140, 30);   // south (lower)
+  addRoad(2680, 420, 220, 1200, 44);   // east (down to the new south road)
 
-  // Internal connector around green (light residential feel)
-  addRoad(green.x-140, green.y+green.h*0.42, green.w+280, 140, 26);
+  // Internal connector around green
+  addRoad(green.x-140, green.y+Math.round(green.h*0.42), green.w+280, 140, 26);
 
-  // Service road leading to amenities (prevents visual overlap)
+  // Service road spine to amenities
   addRoad(1960, 520, 180, 860, 26);
 
   // Lane marks
   for (let i=0;i<26;i++) marks.push({ x: 320 + i*92, y: 340, w: 34, h: 4 });
-  for (let i=0;i<26;i++) marks.push({ x: 320 + i*92, y: 1580, w: 34, h: 4 });
+  for (let i=0;i<26;i++) marks.push({ x: 320 + i*92, y: 1690, w: 34, h: 4 });
   for (let i=0;i<14;i++) marks.push({ x: 2048, y: 600 + i*58, w: 4, h: 26 });
 
   return { asphalt, sidewalk, marks, driveways: [] };
@@ -244,35 +237,26 @@ function buildRoadsClean(W, H, green, amenityZone, parking){
 /* ===================== Townhomes ===================== */
 
 function buildTownhomeRing({ green, keepOut, rng, addBuilding, addYard, addFence }){
-  // Ring placement around the green, with buffers so NOTHING overlaps:
   const pad = 90;         // buffer from green edge
   const blockThick = 150; // townhome depth
-  const alley = 80;       // gap between segments
+  const alley = 88;       // gap between segments (slightly wider, feels cleaner)
 
-  // North row (3 segments)
   placeHorizontalRow(green.x - 80, green.y - pad - blockThick, green.w + 160, blockThick, 3, alley, "south", addBuilding, addYard, addFence);
-
-  // South row
   placeHorizontalRow(green.x - 80, green.y + green.h + pad, green.w + 160, blockThick, 3, alley, "north", addBuilding, addYard, addFence);
 
-  // West column (2 segments)
   placeVerticalCol(green.x - pad - 170, green.y - 10, 170, green.h + 20, 2, alley, "east", addBuilding, addYard, addFence);
 
-  // East column (2 segments), but stop BEFORE amenity zone (critical!)
-  // East row is clamped so it never intrudes into service/amenities.
+  // East column clamped so it never intrudes into amenity/parking keep-out rectangles
   const eastX = green.x + green.w + pad;
   const eastW = 170;
   const eastY = green.y - 10;
   const eastH = green.h + 20;
-  if (!rectOverlapsAny({x:eastX,y:eastY,w:eastW,h:eastH}, keepOut)){
-    placeVerticalCol(eastX, eastY, eastW, eastH, 2, alley, "west", addBuilding, addYard, addFence);
-  } else {
-    // If overlap would happen (shouldn't), shrink height to fit
-    const safe = shrinkToAvoid({x:eastX,y:eastY,w:eastW,h:eastH}, keepOut);
-    placeVerticalCol(safe.x, safe.y, safe.w, safe.h, 2, alley, "west", addBuilding, addYard, addFence);
-  }
 
-  // Two small "club" buildings near corners, placed safely away from amenities/parking
+  let eastRect = {x:eastX,y:eastY,w:eastW,h:eastH};
+  if (rectOverlapsAny(eastRect, keepOut)) eastRect = shrinkToAvoid(eastRect, keepOut);
+  placeVerticalCol(eastRect.x, eastRect.y, eastRect.w, eastRect.h, 2, alley, "west", addBuilding, addYard, addFence);
+
+  // Two small club buildings
   addBuilding({ kind:"club", x: green.x-320, y: green.y+green.h+40, w: 220, h: 120, doors:"north" });
   addBuilding({ kind:"club", x: green.x+green.w+70, y: green.y-190, w: 220, h: 120, doors:"south" });
 }
@@ -283,12 +267,13 @@ function placeHorizontalRow(x, y, w, h, segments, gap, doors, addBuilding, addYa
     const bx = Math.round(x + i*(segW + gap));
     const b = { kind:"townhome", x: bx, y: Math.round(y), w: segW, h, doors, variant: i%3 };
     addBuilding(b);
-    // yard strips (visual)
+
     addYard({ x: bx+12, y: y-34, w: segW-24, h: 26 });
     addYard({ x: bx+12, y: y+h+8, w: segW-24, h: 26 });
-    // thin fence lines (solids)
-    addFence({ x: bx+6, y: y-8, w: segW-12, h: 8, tag:"fence" });
-    addFence({ x: bx+6, y: y+h, w: segW-12, h: 8, tag:"fence" });
+
+    // fences thinner (less snag)
+    addFence({ x: bx+6, y: y-8, w: segW-12, h: 6, tag:"fence" });
+    addFence({ x: bx+6, y: y+h, w: segW-12, h: 6, tag:"fence" });
   }
 }
 
@@ -298,30 +283,33 @@ function placeVerticalCol(x, y, w, h, segments, gap, doors, addBuilding, addYard
     const by = Math.round(y + i*(segH + gap));
     const b = { kind:"townhome", x: Math.round(x), y: by, w, h: segH, doors, variant: i%3 };
     addBuilding(b);
+
     addYard({ x: x-34, y: by+12, w: 26, h: segH-24 });
     addYard({ x: x+w+8, y: by+12, w: 26, h: segH-24 });
-    addFence({ x: x-8, y: by+6, w: 8, h: segH-12, tag:"fence" });
-    addFence({ x: x+w, y: by+6, w: 8, h: segH-12, tag:"fence" });
+
+    addFence({ x: x-8, y: by+6, w: 6, h: segH-12, tag:"fence" });
+    addFence({ x: x+w, y: by+6, w: 6, h: segH-12, tag:"fence" });
   }
 }
 
 /* ===================== Amenities ===================== */
 
 function buildAmenitiesClean({ zone, tennis, pool, mgmt, addBuilding, addProp, addSolid }){
-  // Fence around the amenity zone (solid), with a gate gap near service road
+  // Fence around the amenity zone with a WEST gate gap (so you don't feel “randomly blocked”)
   const fx = zone.x + 20, fy = zone.y + 20, fw = zone.w - 40, fh = zone.h - 40;
 
-  // Gate gap (on west side) so entry feels real
-  const gate = { x: fx, y: fy + fh*0.55, w: 14, h: 120 };
+  const gate = { x: fx, y: fy + Math.round(fh*0.56), w: 10, h: 140 };
 
   // top/bottom
-  addSolid({ x: fx, y: fy, w: fw, h: 12, tag:"fence" });
-  addSolid({ x: fx, y: fy+fh-12, w: fw, h: 12, tag:"fence" });
+  addSolid({ x: fx, y: fy, w: fw, h: 10, tag:"fence" });
+  addSolid({ x: fx, y: fy+fh-10, w: fw, h: 10, tag:"fence" });
+
   // left side split for gate
-  addSolid({ x: fx, y: fy, w: 12, h: gate.y - fy, tag:"fence" });
-  addSolid({ x: fx, y: gate.y + gate.h, w: 12, h: (fy+fh) - (gate.y+gate.h), tag:"fence" });
+  addSolid({ x: fx, y: fy, w: 10, h: gate.y - fy, tag:"fence" });
+  addSolid({ x: fx, y: gate.y + gate.h, w: 10, h: (fy+fh) - (gate.y+gate.h), tag:"fence" });
+
   // right side
-  addSolid({ x: fx+fw-12, y: fy, w: 12, h: fh, tag:"fence" });
+  addSolid({ x: fx+fw-10, y: fy, w: 10, h: fh, tag:"fence" });
 
   // Buildings
   addBuilding({ ...mgmt });
@@ -330,39 +318,35 @@ function buildAmenitiesClean({ zone, tennis, pool, mgmt, addBuilding, addProp, a
   addProp({ type:"sign", x: fx+120, y: fy-18, s: 1, baseY: fy-16, t:"AMENITIES" });
   addProp({ type:"bench", x: pool.x+60, y: pool.y-22, s: 1, baseY: pool.y-20 });
   addProp({ type:"bench", x: tennis.x+tennis.w-60, y: tennis.y+tennis.h+34, s: 1, baseY: tennis.y+tennis.h+36 });
-
-  // A tiny dumpster by management (visual)
   addProp({ type:"dumpster", x: mgmt.x+mgmt.w+42, y: mgmt.y+mgmt.h-10, s: 1, baseY: mgmt.y+mgmt.h-8 });
 }
 
 /* ===================== Parking ===================== */
 
 function buildParkingClean({ lot, addProp, addSolid }){
-  // Curbs as solids with 3 gaps (entrances)
-  const gapW = 140;
+  // Curbs as solids with 3 entrances (bigger gaps, less “snag”)
+  const gapW = 170;
   const gaps = [
     { x: lot.x + 240, w: gapW },
     { x: lot.x + 760, w: gapW },
     { x: lot.x + 1280, w: gapW },
   ];
 
-  // top curb (split)
   const curbY = lot.y-6;
   let cursor = lot.x;
   for (const g of gaps){
-    if (g.x > cursor) addSolid({ x: cursor, y: curbY, w: g.x-cursor, h: 10, tag:"curb" });
+    if (g.x > cursor) addSolid({ x: cursor, y: curbY, w: g.x-cursor, h: 8, tag:"curb" });
     cursor = g.x + g.w;
   }
-  if (cursor < lot.x+lot.w) addSolid({ x: cursor, y: curbY, w: (lot.x+lot.w)-cursor, h: 10, tag:"curb" });
+  if (cursor < lot.x+lot.w) addSolid({ x: cursor, y: curbY, w: (lot.x+lot.w)-cursor, h: 8, tag:"curb" });
 
-  // other edges
-  addSolid({ x: lot.x, y: lot.y+lot.h-4, w: lot.w, h: 10, tag:"curb" });
-  addSolid({ x: lot.x-4, y: lot.y, w: 10, h: lot.h, tag:"curb" });
-  addSolid({ x: lot.x+lot.w-6, y: lot.y, w: 10, h: lot.h, tag:"curb" });
+  addSolid({ x: lot.x, y: lot.y+lot.h-4, w: lot.w, h: 8, tag:"curb" });
+  addSolid({ x: lot.x-4, y: lot.y, w: 8, h: lot.h, tag:"curb" });
+  addSolid({ x: lot.x+lot.w-6, y: lot.y, w: 8, h: lot.h, tag:"curb" });
 
   addProp({ type:"sign", x: lot.x+20, y: lot.y-24, s: 1, baseY: lot.y-22, t:"PARKING" });
 
-  // few parked cars (visual only)
+  // A few parked cars (visual only)
   const colors = [0,1,2];
   for (let row=0; row<2; row++){
     for (let i=0;i<9;i++){
@@ -377,7 +361,6 @@ function buildParkingClean({ lot, addProp, addSolid }){
 /* ===================== Nature ===================== */
 
 function addNatureClean({ rng, green, amenityZone, addProp, addSolid, addSlow }){
-  // Tree ring around green (solid trunks)
   const ring = [
     [green.x+120, green.y+80],
     [green.x+green.w-120, green.y+90],
@@ -389,14 +372,14 @@ function addNatureClean({ rng, green, amenityZone, addProp, addSolid, addSlow })
   ];
   for (const [x,y] of ring){
     addProp({ type:"tree", x, y, s: 1.05, baseY: y+2 });
-    addSolid({ x: x-10, y: y-20, w: 20, h: 20, tag:"tree" });
+    // trunk collision is SMALL, so it blocks but doesn't feel like an invisible wall
+    addSolid({ x: x-9, y: y-18, w: 18, h: 18, tag:"tree" });
   }
 
-  // Lamps on green edges
   addProp({ type:"lamp", x: green.x+70, y: green.y+green.h*0.5, s: 1, baseY: green.y+green.h*0.5+2 });
   addProp({ type:"lamp", x: green.x+green.w-70, y: green.y+green.h*0.5, s: 1, baseY: green.y+green.h*0.5+2 });
 
-  // Few bushes near amenity fence (slow zones only, not solid)
+  // bushes near amenity zone (slow zones only)
   for (let i=0;i<6;i++){
     const x = amenityZone.x + 140 + i*90;
     const y = amenityZone.y + amenityZone.h - 90 + (i%2)*14;
@@ -425,7 +408,6 @@ function drawGround(ctx, x, y, w, h){
   ctx.fillStyle = "#4f6530";
   ctx.fillRect(x, y, w, h);
 
-  // light stable noise (cheap)
   ctx.globalAlpha = 0.07;
   ctx.fillStyle = "#000";
   for (let i=0; i<2600; i++){
@@ -451,15 +433,12 @@ function drawGreenPaths(ctx, g){
   ctx.globalAlpha = 0.70;
   ctx.fillStyle = "#d6c7ab";
 
-  // loop
   roundRect(ctx, g.x+86, g.y+80, g.w-172, g.h-160, Math.max(24,g.r-78), true);
 
-  // carve back inner grass
   ctx.globalAlpha = 0.96;
   ctx.fillStyle = "#56763a";
   roundRect(ctx, g.x+122, g.y+114, g.w-244, g.h-228, Math.max(20,g.r-106), true);
 
-  // two diagonals
   ctx.globalAlpha = 0.66;
   ctx.fillStyle = "#d6c7ab";
   rotRect(ctx, g.x+g.w*0.36, g.y+g.h*0.32, 500, 22, -0.35);
@@ -506,7 +485,6 @@ function drawParkingPad(ctx, lot){
   ctx.fillStyle = "#2a2a33";
   roundRect(ctx, lot.x, lot.y, lot.w, lot.h, lot.r, true);
 
-  // subtle striping
   ctx.globalAlpha = 0.10;
   ctx.fillStyle = "#fff";
   for (let i=0;i<16;i++){
@@ -517,13 +495,11 @@ function drawParkingPad(ctx, lot){
 }
 
 function drawAmenityPads(ctx, tennis, pool, zone){
-  // zone walkway pad (helps separate)
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = "#d6c7ab";
   roundRect(ctx, zone.x+60, zone.y+60, zone.w-120, zone.h-120, 36, true);
   ctx.globalAlpha = 1;
 
-  // tennis
   ctx.globalAlpha = 0.95;
   ctx.fillStyle = "#3f6f66";
   roundRect(ctx, tennis.x, tennis.y, tennis.w, tennis.h, tennis.r, true);
@@ -533,12 +509,10 @@ function drawAmenityPads(ctx, tennis, pool, zone){
   roundRect(ctx, tennis.x+24, tennis.y+24, tennis.w-48, tennis.h-48, 12, false);
   ctx.globalAlpha = 1;
 
-  // pool deck
   ctx.globalAlpha = 0.92;
   ctx.fillStyle = "#cdbb9c";
   roundRect(ctx, pool.x-18, pool.y-18, pool.w+36, pool.h+36, pool.r+18, true);
 
-  // pool water
   ctx.globalAlpha = 0.95;
   ctx.fillStyle = "#1d6b66";
   roundRect(ctx, pool.x, pool.y, pool.w, pool.h, pool.r, true);
@@ -759,11 +733,10 @@ function rectOverlapsAny(r, arr){
 }
 
 function shrinkToAvoid(r, arr){
-  // Simple: shrink height until it no longer overlaps (used as a last-resort safety)
   let out = { ...r };
   for (let tries=0; tries<40; tries++){
     if (!rectOverlapsAny(out, arr)) return out;
-    out = { ...out, h: Math.max(200, out.h - 40) };
+    out = { ...out, h: Math.max(220, out.h - 40) };
   }
   return out;
 }
@@ -787,12 +760,12 @@ function blob(ctx, cx, cy, rx, ry, rot = 0){
 }
 
 function rotRect(ctx, cx, cy, w, h, ang){
+  // Avoid ctx.roundRect (not supported everywhere). Use our roundRect helper.
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(ang);
-  ctx.beginPath();
-  ctx.roundRect(-w/2, -h/2, w, h, Math.min(14, h/2));
-  ctx.fill();
+  ctx.fillStyle = ctx.fillStyle; // keep current
+  roundRect(ctx, -w/2, -h/2, w, h, Math.min(14, h/2), true);
   ctx.restore();
 }
 
