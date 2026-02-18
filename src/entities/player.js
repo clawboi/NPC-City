@@ -1,7 +1,10 @@
 // src/entities/player.js
 // NPC City Player — reference sprite remake (pure pixels)
-// CLEAN WALK: only feet animate (walk + run). No long-leg lift, no arm swing.
-// Running = faster cadence + slightly bigger foot stride.
+// v4: Classic Pokémon 4-frame walk + eyes + subtle arm swing.
+// - 4-frame loop: neutral -> L -> neutral -> R
+// - walk/run just changes cadence + slightly bigger foot offset
+// - short legs (not long-legged)
+// - eyes: whites + pupils, blink supported
 
 export class Player {
   constructor(){
@@ -47,15 +50,15 @@ export class Player {
     const moving  = speed > 8;
     const running = speed > 165;
 
-    // facing (kept for punch spark direction)
+    // facing (used for which axis counts as "forward" for step offset)
     const fx = p.faceX || 0, fy = p.faceY || 0;
     if (Math.abs(fx) + Math.abs(fy) > 0.25) this._facing = this._faceDir(fx, fy);
     const face = this._facing;
 
     const acting = (p.jumpT > 0) || (p.dodgeT > 0) || (p.punchT > 0);
 
-    // step
-    const stepRate = moving ? (running ? 12.5 : 8.2) : 1.0;
+    // step cadence (Pokémon-ish)
+    const stepRate = moving ? (running ? 13.5 : 8.6) : 1.0;
     this._step += dt * stepRate;
 
     // blink
@@ -65,7 +68,7 @@ export class Player {
       this._blinkNext -= dt;
       if (this._blinkNext <= 0){
         this._blinkHold = 0.10;
-        this._blinkNext = 1.3 + Math.random()*2.6;
+        this._blinkNext = 1.2 + Math.random()*2.8;
       }
     }
     const blinking = this._blinkHold > 0;
@@ -77,11 +80,10 @@ export class Player {
     const W = SW * px;
     const H = SH * px;
 
-    // anchor at feet
     const cx = p.x + p.w/2;
     const feetY = p.y + p.h + 2;
 
-    // no bob while moving (clean look)
+    // tiny idle breathe only (keep walk super clean)
     const bob = (!acting && !moving) ? (Math.sin(now * 0.0017) * 0.25) : 0;
 
     const sx = Math.round(cx - W/2);
@@ -107,7 +109,7 @@ export class Player {
       ctx.fillRect(sx + ix*px, sy + iy*px, px, px);
     };
 
-    // shadow (soft)
+    // shadow
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#000";
@@ -116,41 +118,42 @@ export class Player {
     ctx.fill();
     ctx.restore();
 
-    // ===== CLEAN FOOT ANIM =====
-    // Only shoes move. Legs stay fixed and shorter.
-    // We do a simple 2-frame step: swap which foot is "forward" and add tiny toe shift.
-    const stepBit = moving ? ((Math.sin(this._step) > 0) ? 1 : 0) : 0;
+    // ===== Pokémon 4-frame walk =====
+    // frame index: 0 neutral, 1 left, 2 neutral, 3 right
+    // We use a square wave-ish progression, stable + classic.
+    let frame = 0;
+    if (moving && !acting){
+      const t = this._step % 4;
+      frame = (t < 1) ? 0 : (t < 2) ? 1 : (t < 3) ? 2 : 3;
+    }
 
-    // stride: walk = 0..1px toe shift, run = 0..2px toe shift
+    // stride: walk 1px, run 2px (still clean)
     const stride = moving ? (running ? 2 : 1) : 0;
 
-    // In top-down, forward/back depends on facing axis:
-    // - if moving mostly E/W: shift in X
-    // - else: shift in Y
+    // axis of forward motion depends on facing
     const side = (face === "E" || face === "W");
     const dirSign = (face === "E" || face === "S") ? 1 : -1;
 
-    // which shoe is forward this frame
-    // A = left shoe (x=6), B = right shoe (x=9)
-    const shoeAx = 6;
-    const shoeBx = 9;
+    // leg/arm offsets for each frame (classic)
+    // leftFootForward on frame 1, rightFootForward on frame 3
+    const leftF  = (frame === 1);
+    const rightF = (frame === 3);
 
-    // base shoe y positions (kept)
-    const shoeY0 = 17;
-    const toeY0  = 19;
+    const lfX = (moving && side && leftF)  ? stride*dirSign : 0;
+    const rfX = (moving && side && rightF) ? stride*dirSign : 0;
+    const lfY = (moving && !side && leftF)  ? stride*dirSign : 0;
+    const rfY = (moving && !side && rightF) ? stride*dirSign : 0;
 
-    // foot offsets (only applied to shoes + toe highlights)
-    const aForward = (stepBit === 1);
-    const bForward = !aForward;
+    // arms swing opposite (subtle, 1px)
+    const armStride = moving ? 1 : 0;
+    const lArmOff = leftF ? -armStride : rightF ? armStride : 0;
+    const rArmOff = leftF ? armStride : rightF ? -armStride : 0;
 
-    const aOffX = (moving && side) ? (aForward ? stride*dirSign : 0) : 0;
-    const bOffX = (moving && side) ? (bForward ? stride*dirSign : 0) : 0;
-
-    const aOffY = (moving && !side) ? (aForward ? stride*dirSign : 0) : 0;
-    const bOffY = (moving && !side) ? (bForward ? stride*dirSign : 0) : 0;
+    // punching?
+    const punching = p.punchT > 0;
 
     // ==========================================================
-    // DRAW ORDER: hair -> face -> hoodie/straps -> arms -> pants -> legs -> shoes (animated)
+    // DRAW: hair -> face -> hoodie/straps -> arms -> pants -> legs -> shoes
     // ==========================================================
 
     // ---- HAIR ----
@@ -173,10 +176,19 @@ export class Player {
 
     P(6,6,C.blush); P(9,6,C.blush);
 
+    // ---- EYES (added) ----
+    // whites + pupils; blink collapses to a line
     if (blinking){
       P(7,5,C.hair); P(8,5,C.hair);
     } else {
-      P(7,5,C.navy); P(8,5,C.navy);
+      // whites
+      P(7,5,C.white);
+      P(8,5,C.white);
+      // pupils (navy)
+      P(7,5,C.navy);
+      P(8,5,C.navy);
+      // tiny highlight on one eye (optional, subtle)
+      P(7,4,C.white);
     }
 
     // ---- HOODIE / SHIRT ----
@@ -198,18 +210,17 @@ export class Player {
     P(3,9,C.tealS);
     P(12,9,C.tealS);
 
-    // arms (STATIC now, cleaner)
-    const punching = p.punchT > 0;
+    // ---- ARMS (move subtly) ----
     if (!punching){
-      // left sleeve + hand
-      P(4,11, C.shirt2);
-      P(4,12, C.shirt1);
-      P(4,13, C.skin);
+      // left sleeve + hand (vertical nudge)
+      P(4,11 + lArmOff, C.shirt2);
+      P(4,12 + lArmOff, C.shirt1);
+      P(4,13 + lArmOff, C.skin);
 
       // right sleeve + hand
-      P(11,11, C.shirt2);
-      P(11,12, C.shirt1);
-      P(11,13, C.skin);
+      P(11,11 + rArmOff, C.shirt2);
+      P(11,12 + rArmOff, C.shirt1);
+      P(11,13 + rArmOff, C.skin);
     } else {
       let pxDirX = 0, pxDirY = 0;
       if (face === "E") pxDirX = 2;
@@ -228,37 +239,41 @@ export class Player {
       this._drawPunchSpark(ctx, p, face);
     }
 
-    // pants
+    // ---- PANTS ----
     [
       [5,12],[6,12],[7,12],[8,12],[9,12],[10,12],
       [5,13],[6,13],[7,13],[8,13],[9,13],[10,13],
     ].forEach(([x,y])=>P(x,y,C.pants));
     [ [9,13],[10,13],[10,12] ].forEach(([x,y])=>P(x,y,C.navy));
 
-    // legs (SHORTER: only 2 skin pixels)
-    // left leg
+    // ---- LEGS (short) ----
     P(6,14, C.skin);
     P(6,15, C.skin);
-    // right leg
     P(9,14, C.skin);
     P(9,15, C.skin);
 
-    // socks (static)
+    // socks
     P(6,16, C.white);
     P(9,16, C.white);
 
-    // SHOES (animated only)
-    // left shoe
-    P(shoeAx + aOffX, shoeY0 + aOffY, C.navy);
-    P(shoeAx + aOffX, shoeY0+1 + aOffY, C.navy);
-    P(shoeAx+1 + aOffX, shoeY0+1 + aOffY, C.navy); // chunk
-    P(shoeAx + aOffX, toeY0 + aOffY, C.white);      // toe highlight
+    // ---- SHOES (Pokémon style) ----
+    // left shoe at x=6, right shoe at x=9
+    // Only the shoes/toe highlight shift by frame.
+    const shoeY = 17;
 
-    // right shoe
-    P(shoeBx + bOffX, shoeY0 + bOffY, C.navy);
-    P(shoeBx + bOffX, shoeY0+1 + bOffY, C.navy);
-    P(shoeBx-1 + bOffX, shoeY0+1 + bOffY, C.navy);
-    P(shoeBx + bOffX, toeY0 + bOffY, C.white);
+    // left shoe base
+    P(6 + lfX, shoeY + lfY, C.navy);
+    P(6 + lfX, shoeY+1 + lfY, C.navy);
+    P(7 + lfX, shoeY+1 + lfY, C.navy);
+    // left toe
+    P(6 + lfX, shoeY+2 + lfY, C.white);
+
+    // right shoe base
+    P(9 + rfX, shoeY + rfY, C.navy);
+    P(9 + rfX, shoeY+1 + rfY, C.navy);
+    P(8 + rfX, shoeY+1 + rfY, C.navy);
+    // right toe
+    P(9 + rfX, shoeY+2 + rfY, C.white);
   }
 
   _faceDir(fx, fy){
