@@ -131,10 +131,6 @@ export class UI {
     this.toastEl = toast;
   }
 
-    renderHUD(){
-    ...
-  }
-
   setInventory({ slotIndex, heldType }){
     this.renderHUD();
     const el = this.root.querySelector("#hud-inv");
