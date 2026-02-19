@@ -79,14 +79,48 @@ canvas{
   left:14px;
   top:14px;
   display:flex;
-  gap:10px;
-  align-items:center;
+  flex-direction:column;
+  gap:8px;
+  align-items:flex-start;
   padding:10px 12px;
   border-radius:14px;
   border:1px solid var(--ui2);
   background: rgba(0,0,0,.35);
   backdrop-filter: blur(10px);
   pointer-events:none;
+}
+
+.hud .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.hud .row.top .pill{font-weight:700}
+.hud .row.mid .pill{opacity:.95}
+.pill.soft{background: rgba(255,255,255,.045)}
+
+.meters{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.meter{display:flex; gap:6px; align-items:center}
+.meter-label{
+  font-size:10px;
+  letter-spacing:.12em;
+  opacity:.75;
+  width:28px;
+  text-align:right;
+}
+.meter-bar{
+  width:88px;
+  height:10px;
+  border-radius:999px;
+  border:1px solid var(--ui2);
+  background: rgba(255,255,255,.05);
+  overflow:hidden;
+}
+.meter-fill{
+  height:100%;
+  width:100%;
+  background: linear-gradient(90deg, rgba(138,46,255,.95), rgba(255,255,255,.65));
 }
 
 .pill{
@@ -117,20 +151,7 @@ canvas{
   border-radius:10px;
 }
 
-/* ===== Stamina bar ===== */
-.stam{
-  width: 120px;
-  height: 10px;
-  border-radius: 999px;
-  border: 1px solid var(--ui2);
-  background: rgba(255,255,255,.05);
-  overflow:hidden;
-}
-.stam-fill{
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, rgba(138,46,255,.95), rgba(255,255,255,.65));
-}
+/* (legacy stamina bar styles removed; now uses .meter) */
 
 /* ===== Interaction prompt ===== */
 .prompt{
