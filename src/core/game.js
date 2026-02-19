@@ -60,7 +60,7 @@ export class Game {
 
       // bank vault (once/day)
       vault: { cash: 0, cars: [], clothes: [] },
-      vaultLastDay: "" // YYYY-MM-DD (local)
+      vaultLastDay: "", // YYYY-MM-DD (local)
 
       // shows + jobs
       lastShowDay: "",
