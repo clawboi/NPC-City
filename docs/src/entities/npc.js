@@ -1,5 +1,9 @@
 // src/entities/npc.js
-// Tiny NPC system (V2 foundation): walkers + talk prompts + simple gigs
+// NPC City — NPC System v3 (Director-mode safe upgrade)
+// Goals (per your request):
+// 1) NPCs feel "alive": they walk to places, pause, ENTER doors (disappear), then EXIT later.
+// 2) NPC style closer to the player: same visual scale + cleaner silhouette.
+// 3) No world/layout changes. No new assets. Pure code upgrade.
 
 export class NPCSystem {
   constructor(world){
@@ -13,7 +17,6 @@ export class NPCSystem {
   spawnActorDistrict(){
     this.list.length = 0;
 
-    // Keep it small and readable. We can scale counts later.
     const names = [
       { name:"Mira",  role:"citizen" },
       { name:"Jules", role:"citizen" },
@@ -26,7 +29,7 @@ export class NPCSystem {
       { name:"Cass",  role:"agent"   }, // casting agent for gigs
     ];
 
-    // Spawn inside Midtown / Studio Row area
+    // Spawn near Midtown/Studio Row-ish (same as before)
     const base = [
       { x: 1120, y: 560 },
       { x: 980,  y: 640 },
@@ -36,37 +39,121 @@ export class NPCSystem {
       { x: 1460, y: 540 },
       { x: 1540, y: 700 },
       { x: 1180, y: 420 },
-      { x: 1180, y: 520 }, // near the stage (agent)
+      { x: 1180, y: 520 }, // near stage (agent)
     ];
 
     for (let i=0; i<names.length; i++){
       const b = base[i] || { x: 1100, y: 600 };
       const c = palette(i);
-      this.list.push({
+
+      const n = {
         id: `npc_${i}`,
         name: names[i].name,
         kind: names[i].role,
+
         x: b.x + (rand(this)*40-20),
         y: b.y + (rand(this)*40-20),
         w: 18,
         h: 18,
+
         vx: 0,
         vy: 0,
         faceX: 0,
         faceY: 1,
+
+        // behavior
         t: rand(this)*10,
-        wanderT: 0,
-        // blink timers (prevents NaN)
+        state: "roam",     // roam | go | wait | inside
+        waitT: 0,
+        insideT: 0,
+        goal: null,        // {x,y,type,door?}
+        route: [],         // queued goals
+
+        // blink timers
         blinkT: 0,
         blinkNext: 1.2 + rand(this)*2.6,
+
         talkSeed: (i*17+9)|0,
         col: c,
-      });
+
+        // draw
+        hidden: false,
+      };
+
+      // give each NPC a tiny routine
+      n.route = this._buildRoutine(n);
+      this.list.push(n);
     }
+  }
+
+  _pois(){
+    const w = this.world || {};
+    const out = [];
+
+    // park center
+    if (w.park) out.push({ type:"park", x: w.park.x + w.park.w*0.5, y: w.park.y + w.park.h*0.5 });
+
+    // amenities if present
+    if (w.pool)   out.push({ type:"pool",   x: w.pool.x + w.pool.w*0.5,   y: w.pool.y + w.pool.h*0.5 });
+    if (w.tennis) out.push({ type:"tennis", x: w.tennis.x + w.tennis.w*0.5, y: w.tennis.y + w.tennis.h*0.5 });
+
+    // mailbox/payphone box
+    if (w.box) out.push({ type:"box", x: w.box.x + w.box.w*0.5, y: w.box.y + w.box.h*0.5 });
+
+    // doors (enter/exit)
+    if (Array.isArray(w.doors)){
+      for (const d of w.doors){
+        out.push({ type:"door", x: d.x + d.w*0.5, y: d.y + d.h*0.5, door: d });
+      }
+    }
+
+    // fallback
+    if (!out.length) out.push({ type:"mid", x: 1200, y: 700 });
+
+    return out;
+  }
+
+  _buildRoutine(n){
+    const pois = this._pois();
+    const pick = () => pois[(rand(this)*pois.length)|0];
+
+    const route = [];
+    // A little story loop: wander -> visit -> maybe enter a door -> visit -> pause
+    for (let k=0; k<6; k++){
+      const p = pick();
+      route.push({ ...p });
+      // bias: every other stop has a chance to be a door
+      if (k % 2 === 1 && rand(this) < 0.55){
+        const d = pois.find(x => x.type==="door");
+        if (d) route.push({ ...d });
+      }
+    }
+
+    // agent stays near stage: reduce door usage
+    if (n.kind === "agent"){
+      return [
+        { type:"stage", x: 1180, y: 520 },
+        { type:"stage", x: 1180, y: 520 },
+        { type:"box", x: (this.world?.box?.x ?? 1140) + 30, y: (this.world?.box?.y ?? 1080) + 30 },
+        { type:"stage", x: 1180, y: 520 },
+      ];
+    }
+
+    return route;
+  }
+
+  _pickNextGoal(n){
+    if (!n.route || !n.route.length) n.route = this._buildRoutine(n);
+    const g = n.route.shift();
+    // recycle
+    if (g) n.route.push(g);
+    n.goal = g || null;
+    n.state = n.goal ? "go" : "roam";
   }
 
   update(dt){
     const solidsHit = (rect) => this.world?.hitsSolid ? this.world.hitsSolid(rect) : false;
+
     for (let i=0; i<this.list.length; i++){
       const n = this.list[i];
       n.t += dt;
@@ -79,53 +166,117 @@ export class NPCSystem {
       }
       if (n.blinkT > 0) n.blinkT = Math.max(0, n.blinkT - dt);
 
-      // Simple wander AI: pick a direction, walk a bit, pause a bit.
-      n.wanderT -= dt;
-      if (n.wanderT <= 0){
-        const mode = rand(this) < 0.25 ? "pause" : "walk";
-        if (mode === "pause"){
-          n.vx = 0; n.vy = 0;
-          n.wanderT = 0.55 + rand(this)*0.85;
-        } else {
-          const ang = rand(this) * Math.PI * 2;
-          const spd = 26 + rand(this)*22;
-          n.vx = Math.cos(ang) * spd;
-          n.vy = Math.sin(ang) * spd;
-          n.wanderT = 0.9 + rand(this)*1.6;
+      // inside (entered a building)
+      if (n.state === "inside"){
+        n.insideT -= dt;
+        n.hidden = true;
+        n.vx = 0; n.vy = 0;
+        if (n.insideT <= 0){
+          n.hidden = false;
+          // exit at the same door if we have it
+          if (n.goal?.door){
+            n.x = clamp(n.goal.door.x + n.goal.door.w/2 - n.w/2 + (rand(this)*14-7), 0, this.world.w - n.w);
+            n.y = clamp(n.goal.door.y + n.goal.door.h/2 - n.h/2 + (rand(this)*14-7), 0, this.world.h - n.h);
+          }
+          n.state = "wait";
+          n.waitT = 0.35 + rand(this)*0.8;
+          n.goal = null;
+        }
+        continue;
+      }
+
+      // choose a goal if we don't have one
+      if (!n.goal && n.state !== "wait"){
+        this._pickNextGoal(n);
+      }
+
+      // waiting
+      if (n.state === "wait"){
+        n.waitT -= dt;
+        n.vx = 0; n.vy = 0;
+        if (n.waitT <= 0){
+          n.state = "go";
+          if (!n.goal) this._pickNextGoal(n);
         }
       }
 
-      // Nudge agent to stay near stage
+      // go-to behavior (pathless, cheap steering)
+      if (n.state === "go" && n.goal){
+        const gx = n.goal.x, gy = n.goal.y;
+        const dx = gx - (n.x + n.w/2);
+        const dy = gy - (n.y + n.h/2);
+        const d = Math.hypot(dx,dy);
+
+        const spdBase = (n.kind === "agent") ? 34 : 30;
+        const spd = spdBase + rand(this)*10;
+
+        if (d < 18){
+          // reached
+          if (n.goal.type === "door" && n.goal.door){
+            n.state = "inside";
+            n.insideT = 2.5 + rand(this)*8.5; // stays inside a bit
+            // keep goal so we know where to exit
+          } else {
+            n.state = "wait";
+            n.waitT = 0.6 + rand(this)*1.6;
+            n.goal = null;
+          }
+          n.vx = 0; n.vy = 0;
+        } else {
+          n.vx = (dx / d) * spd;
+          n.vy = (dy / d) * spd;
+        }
+      }
+
+      // fallback roam (rare)
+      if (n.state === "roam"){
+        // Simple wander AI: pick a direction, walk a bit, pause a bit.
+        n.waitT -= dt;
+        if (n.waitT <= 0){
+          const mode = rand(this) < 0.25 ? "pause" : "walk";
+          if (mode === "pause"){
+            n.vx = 0; n.vy = 0;
+            n.waitT = 0.55 + rand(this)*0.85;
+          } else {
+            const ang = rand(this) * Math.PI * 2;
+            const spd = 26 + rand(this)*22;
+            n.vx = Math.cos(ang) * spd;
+            n.vy = Math.sin(ang) * spd;
+            n.waitT = 0.9 + rand(this)*1.6;
+          }
+        }
+      }
+
+      // Nudge agent to stay near stage (keep your original behavior)
       if (n.kind === "agent"){
         const ax = 1180, ay = 520;
         const dx = ax - n.x;
         const dy = ay - n.y;
         const d = Math.hypot(dx,dy);
-        if (d > 140){
+        if (d > 180){
           n.vx = (dx/d) * 55;
           n.vy = (dy/d) * 55;
-          n.wanderT = 0.35;
+          n.state = "go";
         }
       }
 
-      // Movement + basic collision bounce
+      // Movement + basic collision bounce (axis)
       const nx = n.x + n.vx * dt;
       const ny = n.y + n.vy * dt;
 
-      // axis collision like player (cheap)
       let tx = nx;
       let ty = n.y;
       if (!solidsHit({ x: tx, y: ty, w: n.w, h: n.h })){
         n.x = tx;
       } else {
-        n.vx *= -0.6;
+        n.vx *= -0.5;
       }
       tx = n.x;
       ty = ny;
       if (!solidsHit({ x: tx, y: ty, w: n.w, h: n.h })){
         n.y = ty;
       } else {
-        n.vy *= -0.6;
+        n.vy *= -0.5;
       }
 
       // Bounds
@@ -152,6 +303,7 @@ export class NPCSystem {
 
     for (let i=0; i<this.list.length; i++){
       const n = this.list[i];
+      if (n.hidden) continue;
 
       // shadow
       ctx.fillStyle = "rgba(0,0,0,.28)";
@@ -159,7 +311,6 @@ export class NPCSystem {
       ctx.ellipse(n.x + n.w/2, n.y + n.h + 3, 8, 3, 0, 0, Math.PI*2);
       ctx.fill();
 
-      // body (tiny pixel person)
       drawNPCSprite(ctx, n);
     }
     ctx.restore();
@@ -170,6 +321,7 @@ export class NPCSystem {
     let bd = r;
     for (let i=0; i<this.list.length; i++){
       const n = this.list[i];
+      if (n.hidden) continue;
       const dx = (n.x + n.w/2) - px;
       const dy = (n.y + n.h/2) - py;
       const d = Math.hypot(dx,dy);
@@ -179,7 +331,6 @@ export class NPCSystem {
   }
 
   talkLines(npc){
-    // Deterministic-ish lines per NPC
     const s = (npc.talkSeed|0) + (npc.kind === "agent" ? 77 : 0);
     const linesCitizen = [
       "Nice night for a walk.",
@@ -187,24 +338,25 @@ export class NPCSystem {
       "Studio Row got vibes.",
       "I heard the 8PM show gets tips.",
       "You look like you're grinding.",
+      "I'm just trying to stay paid.",
+      "I swear I saw someone vanish into that door.",
     ];
     const linesAgent = [
       "You want stage time? Prove you're consistent.",
       "Flyers. Always flyers. Bring the city to the show.",
-      "Network. Perform. Repeat.",
-      "If you miss 8PM, people forget you.",
+      "No drama. Just performance.",
+      "You miss 8PM, you lose momentum.",
     ];
-    const pick = (arr) => arr[Math.abs(hash(s + arr.length*13)) % arr.length];
-    const a = npc.kind === "agent" ? linesAgent : linesCitizen;
-    return [pick(a), pick(a.slice().reverse())];
+    const pool = (npc.kind === "agent") ? linesAgent : linesCitizen;
+    return pool[(hash(s) % pool.length)|0];
   }
 }
 
+/* ===========================
+   NPC sprite (player-adjacent)
+   =========================== */
 function drawNPCSprite(ctx, n){
-  // IMPORTANT (Director Mode request): NPCs should LOOK the same size as the player.
-  // Player sprite renders at a 16x20 grid with px=2 (32x40). We draw NPCs at that same visual scale,
-  // while keeping their collision box (18x18) unchanged.
-
+  // Same visual scale as player (px=2, 16x20 grid)
   const moving = (Math.abs(n.vx) + Math.abs(n.vy)) > 1;
   const bob = moving ? ((Math.sin(n.t*9) > 0) ? 1 : 0) : 0;
   const blinking = n.blinkT > 0;
@@ -213,6 +365,7 @@ function drawNPCSprite(ctx, n){
   const hair = n.col.hair;
   const top  = n.col.top;
   const bot  = n.col.bot;
+  const shoe = n.col.shoe;
 
   const px2 = 2;
   const SW = 16, SH = 20;
@@ -229,95 +382,92 @@ function drawNPCSprite(ctx, n){
     ctx.fillRect(sx + ix*px2, sy + iy*px2, px2, px2);
   };
 
-  // grounded shadow (similar scale to player)
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.ellipse(cx, feetY + 2, 12, 6, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.restore();
-
-  // hair
+  // Hair cap
   for (let x=5; x<=10; x++) P(x,0,hair);
   for (let x=4; x<=11; x++) P(x,1,hair);
   P(4,2,hair); P(11,2,hair);
-  P(4,3,hair); P(11,3,hair);
 
-  // face
-  for (let y=2; y<=6; y++){
-    for (let x=5; x<=10; x++){
-      if (y===2 && (x===5 || x===10)) continue;
-      P(x,y,skin);
-    }
-  }
+  // Head/face
+  for (let x=5; x<=10; x++) P(x,2,skin);
+  for (let x=4; x<=11; x++) P(x,3,skin);
+  for (let x=4; x<=11; x++) P(x,4,skin);
 
-  // eyes
-  const ink = "rgba(15,15,22,0.85)";
-  const white = "rgba(255,255,255,0.85)";
-  if (blinking){
-    P(7,4,ink);
-    P(8,4,ink);
+  // Eyes
+  if (!blinking){
+    P(6,4,"#111"); P(9,4,"#111");
+    P(6,5,"rgba(255,255,255,.65)"); P(9,5,"rgba(255,255,255,.65)");
   } else {
-    P(7,4,ink);
-    P(9,4,ink);
-    P(7,3,white);
-    P(9,3,white);
+    P(6,4,"#111"); P(9,4,"#111");
   }
 
-  // torso
-  for (let y=7; y<=12; y++){
+  // Neck
+  P(7,6,skin); P(8,6,skin);
+
+  // Torso
+  for (let y=7; y<=11; y++){
     for (let x=5; x<=10; x++) P(x,y,top);
   }
+  P(4,9,top); P(11,9,top);
 
-  // arms (simple)
-  const armX = (n.faceX > 0) ? 11 : (n.faceX < 0 ? 4 : 0);
-  if (armX){
-    P(armX,8,skin); P(armX,9,skin); P(armX,10,skin);
-  } else {
-    P(4,8,skin); P(11,8,skin);
-    P(4,9,skin); P(11,9,skin);
+  // Arms (tiny swing)
+  const arm = moving ? ((Math.sin(n.t*10) > 0) ? 1 : 0) : 0;
+  P(4,10+arm,skin); P(11,10-arm,skin);
+  P(4,11+arm,skin); P(11,11-arm,skin);
+
+  // Waist
+  for (let x=5; x<=10; x++) P(x,12,bot);
+
+  // Legs
+  for (let y=13; y<=16; y++){
+    P(6,y,bot); P(9,y,bot);
   }
 
-  // legs
-  for (let y=13; y<=17; y++){
-    P(7,y,bot); P(8,y,bot);
-    P(9,y,bot); P(10,y,bot);
+  // Shoes (slim like player, not chunky)
+  P(5,17,shoe); P(6,17,shoe);
+  P(9,17,shoe); P(10,17,shoe);
+  if (moving){
+    const step = (Math.sin(n.t*10) > 0) ? 1 : 0;
+    if (step) { P(6,17,"rgba(255,255,255,.10)"); }
+    else { P(9,17,"rgba(255,255,255,.10)"); }
   }
-  // shoes
-  const shoe = "rgba(15,15,22,0.9)";
-  P(7,18,shoe); P(8,18,shoe);
-  P(9,18,shoe); P(10,18,shoe);
+
+  // Little outline pixels (subtle depth, still fast)
+  const ol = "rgba(0,0,0,.35)";
+  P(4,3,ol); P(11,3,ol);
+  P(4,12,ol); P(11,12,ol);
+  P(5,17,ol); P(10,17,ol);
 }
 
-function px(ctx,x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x,y,w,h); }
+/* ===========================
+   deterministic helpers
+   =========================== */
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-
+function hash(n){
+  n |= 0;
+  n = (n ^ (n >>> 16)) * 0x45d9f3b;
+  n = (n ^ (n >>> 16)) * 0x45d9f3b;
+  n = n ^ (n >>> 16);
+  return n >>> 0;
+}
 function rand(sys){
-  // xorshift32
+  // xorshift-ish
   let x = sys._seed|0;
   x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
   sys._seed = x|0;
   return ((x >>> 0) / 4294967296);
 }
-
-function hash(n){
-  let x = n|0;
-  x = ((x >>> 16) ^ x) * 0x45d9f3b;
-  x = ((x >>> 16) ^ x) * 0x45d9f3b;
-  x = (x >>> 16) ^ x;
-  return x|0;
-}
-
 function palette(i){
-  const skins = ["#f2c7a1", "#d8a77f", "#b9835a", "#8a5a3b"]; 
-  const hairs = ["#121218", "#2a1b12", "#2b2b33", "#4b2a1a"]; 
-  const tops  = ["rgba(138,46,255,.95)", "rgba(255,255,255,.75)", "rgba(0,255,156,.75)", "rgba(255,60,120,.75)"]; 
-  const bots  = ["rgba(255,255,255,.22)", "rgba(255,255,255,.32)", "rgba(255,255,255,.18)"]; 
+  const skins = ["#f2c9a0","#e8b98e","#d8a579","#c88f62","#b97b52","#a96a44"];
+  const hairs = ["#1a1a1a","#2a1b10","#3a2a1a","#5b3b22","#7a4a2a","#d8c19a"];
+  const tops  = ["#111","#202020","#2b0f3b","#0b1d3a","#2a3a0b","#3a0b0b"];
+  const bots  = ["#0d0d0f","#1a1a24","#151515","#101018","#121212","#0f1012"];
+  const shoes = ["#0a0a0a","#111","#0b0b14","#151515","#0d0d0d","#0a0a12"];
+
   return {
     skin: skins[i % skins.length],
-    hair: hairs[(i*2) % hairs.length],
-    top: tops[(i*3) % tops.length],
-    bot: bots[(i*5) % bots.length]
+    hair: hairs[(i*3) % hairs.length],
+    top:  tops[(i*5+1) % tops.length],
+    bot:  bots[(i*7+2) % bots.length],
+    shoe: shoes[(i*11+3) % shoes.length],
   };
 }
